@@ -1,0 +1,100 @@
+/* 學生酒吧管理系統 — 共用樣式骨架 */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --text: #1f2430;
+  --muted: #8a8f99;
+  --primary: #2f6fed;
+  --border: #e2e5ea;
+  --danger: #d94141;      /* Andon 超時警示用 */
+  --warning: #e8a13c;     /* 庫存警示用 */
+  --ok: #3aa568;
+}
+
+body {
+  font-family: "Noto Sans TC", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+/* ---------- 首頁 ---------- */
+.landing { max-width: 640px; margin: 10vh auto; text-align: center; padding: 1rem; }
+.landing h1 { margin-bottom: .5rem; }
+.role-links { display: flex; gap: 1rem; justify-content: center; margin-top: 2rem; flex-wrap: wrap; }
+.role-card {
+  display: block; padding: 1.5rem 2rem; background: var(--panel);
+  border: 1px solid var(--border); border-radius: 12px;
+  text-decoration: none; color: var(--text); font-size: 1.1rem;
+}
+.role-card small { color: var(--muted); }
+.role-card:hover { border-color: var(--primary); }
+
+/* ---------- 共用版面 ---------- */
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: .75rem 1.25rem; background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.ws-status { font-size: .85rem; color: var(--muted); }
+.ws-status.connected { color: var(--ok); }
+.ws-status.disconnected { color: var(--danger); }
+
+.layout-two-col, .layout-three-col {
+  display: grid; gap: 1rem; padding: 1rem;
+}
+.layout-two-col { grid-template-columns: 1fr 1fr; }
+.layout-three-col { grid-template-columns: 1fr 1fr 1fr; }
+@media (max-width: 900px) {
+  .layout-two-col, .layout-three-col { grid-template-columns: 1fr; }
+}
+
+.panel {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: 1rem;
+}
+.panel h2 { font-size: 1rem; margin-bottom: .75rem; }
+
+.placeholder { color: var(--muted); list-style: none; }
+
+/* ---------- 表單 ---------- */
+form label { display: block; margin-bottom: .75rem; font-size: .9rem; }
+form input, form select {
+  display: block; width: 100%; margin-top: .25rem; padding: .5rem;
+  border: 1px solid var(--border); border-radius: 8px; font-size: 1rem;
+}
+.btn {
+  padding: .6rem 1.2rem; border: none; border-radius: 8px;
+  font-size: 1rem; cursor: pointer;
+}
+.btn-primary { background: var(--primary); color: #fff; }
+
+/* ---------- 訂單清單 / 佇列 ---------- */
+.order-list, .order-queue, .alert-list { list-style: none; }
+.order-queue li, .order-list li {
+  padding: .75rem; margin-bottom: .5rem;
+  border: 1px solid var(--border); border-radius: 8px;
+}
+
+/* Andon: 超時訂單（第五步由 JS 加上這個 class） */
+.order-queue li.overdue {
+  border-color: var(--danger);
+  background: #fdecec;
+}
+
+/* 庫存警示 */
+.alert-list li.low-stock {
+  border-left: 4px solid var(--warning);
+  padding: .5rem .75rem; margin-bottom: .5rem;
+  background: #fdf6ec; border-radius: 4px;
+}
+
+/* ---------- 表格 ---------- */
+table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+th, td { text-align: left; padding: .5rem; border-bottom: 1px solid var(--border); }
+th { color: var(--muted); font-weight: 600; }
+
+.stats-row { display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>經理｜學生酒吧</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>📊 經理儀表板</h1>
+    <span id="ws-status" class="ws-status">連線中…</span>
+  </header>
+
+  <main class="layout-two-col">
+    <!-- 全局訂單總覽（第七步實作） -->
+    <section class="panel">
+      <h2>訂單總覽</h2>
+      <div id="order-stats" class="stats-row">
+        <!-- 例：各狀態數量、未付款金額 -->
+      </div>
+      <table class="order-table">
+        <thead>
+          <tr><th>#</th><th>桌號</th><th>飲料</th><th>數量</th><th>狀態</th><th>付款</th><th>下單時間</th></tr>
+        </thead>
+        <tbody id="order-table-body">
+          <tr><td colspan="7" class="placeholder">尚無資料</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 庫存警示（第六步實作 Reorder Point） -->
+    <section class="panel">
+      <h2>庫存警示</h2>
+      <ul id="stock-alerts" class="alert-list">
+        <li class="placeholder">尚無警示</li>
+      </ul>
+      <h2>原料庫存</h2>
+      <table class="stock-table">
+        <thead>
+          <tr><th>原料</th><th>庫存</th><th>單位</th><th>補貨點</th></tr>
+        </thead>
+        <tbody id="stock-table-body">
+          <tr><td colspan="4" class="placeholder">尚無資料</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="/js/common.js"></script>
+  <script src="/js/manager.js"></script>
+</body>
+</html>

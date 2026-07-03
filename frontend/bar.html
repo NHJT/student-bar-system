@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>吧台｜學生酒吧</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>🍸 吧台訂單佇列</h1>
+    <span id="ws-status" class="ws-status">連線中…</span>
+  </header>
+
+  <!-- 訂單佇列（第三步實作；第五步加入 Andon 超時變紅） -->
+  <main class="layout-three-col">
+    <section class="panel queue-col" data-status="new">
+      <h2>🆕 新訂單</h2>
+      <ul id="queue-new" class="order-queue"></ul>
+    </section>
+    <section class="panel queue-col" data-status="preparing">
+      <h2>🔧 製作中</h2>
+      <ul id="queue-preparing" class="order-queue"></ul>
+    </section>
+    <section class="panel queue-col" data-status="completed">
+      <h2>✅ 完成待送</h2>
+      <ul id="queue-completed" class="order-queue"></ul>
+    </section>
+  </main>
+
+  <script src="/js/common.js"></script>
+  <script src="/js/bar.js"></script>
+</body>
+</html>

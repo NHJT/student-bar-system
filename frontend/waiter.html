@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>服務生｜學生酒吧</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>🧾 服務生</h1>
+    <span id="ws-status" class="ws-status">連線中…</span>
+  </header>
+
+  <main class="layout-two-col">
+    <!-- 點餐區（第三步實作） -->
+    <section class="panel">
+      <h2>點餐</h2>
+      <form id="order-form">
+        <label>桌號
+          <select id="table-number" required></select>
+        </label>
+        <label>飲料
+          <select id="drink-select" required></select>
+        </label>
+        <label>數量
+          <input type="number" id="quantity" min="1" value="1" required>
+        </label>
+        <label>特殊需求
+          <input type="text" id="special-request" placeholder="例：少冰、去薄荷">
+        </label>
+        <button type="submit" class="btn btn-primary">送出訂單</button>
+      </form>
+    </section>
+
+    <!-- 訂單與付款區（第三步實作） -->
+    <section class="panel">
+      <h2>本場訂單／付款</h2>
+      <ul id="order-list" class="order-list">
+        <li class="placeholder">尚無訂單</li>
+      </ul>
+    </section>
+  </main>
+
+  <script src="/js/common.js"></script>
+  <script src="/js/waiter.js"></script>
+</body>
+</html>
