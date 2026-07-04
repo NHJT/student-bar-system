@@ -17,6 +17,16 @@ from backend.ws import manager
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
 
+class NoCacheStaticFiles(StaticFiles):
+    """開發用：要求瀏覽器每次重新驗證 JS/CSS/HTML，
+    避免改了前端檔案卻因快取而看不到更新。"""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()  # 啟動時自動建立資料表
@@ -49,4 +59,4 @@ async def websocket_endpoint(ws: WebSocket):
 
 
 # 前端頁面: /waiter.html、/bar.html、/manager.html
-app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+app.mount("/", NoCacheStaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
