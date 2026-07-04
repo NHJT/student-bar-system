@@ -20,6 +20,14 @@ class Drink(DrinkBase):
     id: int
 
 
+class DrinkUpdate(BaseModel):
+    """部分更新：只帶要改的欄位。"""
+
+    name: Optional[str] = None
+    category: Optional[str] = None
+    is_available: Optional[bool] = None
+
+
 # ---------- ingredients ----------
 class IngredientBase(BaseModel):
     name: str
@@ -36,9 +44,31 @@ class Ingredient(IngredientBase):
     id: int
 
 
+class IngredientUpdate(BaseModel):
+    """部分更新：只帶要改的欄位。"""
+
+    name: Optional[str] = None
+    unit: Optional[str] = None
+    current_stock: Optional[float] = None
+    reorder_point: Optional[float] = None
+
+
+class StockAdjust(BaseModel):
+    """庫存增減：正數進貨、負數耗損。"""
+
+    delta: float
+
+
 # ---------- recipes ----------
 class RecipeItem(BaseModel):
     drink_id: int
+    ingredient_id: int
+    quantity_needed: float
+
+
+class RecipeItemIn(BaseModel):
+    """設定配方時的單項原料（drink_id 由路徑帶入）。"""
+
     ingredient_id: int
     quantity_needed: float
 
@@ -63,3 +93,11 @@ class Order(BaseModel):
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
     delivered_at: Optional[str] = None
+
+
+class OrderStatusUpdate(BaseModel):
+    status: str  # 目標狀態：preparing / completed / delivered / cancelled
+
+
+class OrderPaymentUpdate(BaseModel):
+    payment_status: str = "paid"  # unpaid / paid

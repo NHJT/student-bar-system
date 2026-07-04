@@ -11,7 +11,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 
 from backend.database import init_db
-from backend.routers import drinks, ingredients, orders
+from backend.routers import drinks, ingredients, orders, recipes
 from backend.ws import manager
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
@@ -28,6 +28,7 @@ app = FastAPI(title="學生酒吧點餐與庫存管理系統", lifespan=lifespan
 app.include_router(drinks.router)
 app.include_router(ingredients.router)
 app.include_router(orders.router)
+app.include_router(recipes.router)
 
 
 @app.get("/api/health")

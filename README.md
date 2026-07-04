@@ -1,5 +1,7 @@
 # 學生酒吧點餐與庫存管理系統
 
+作者：developer
+
 Python + FastAPI + SQLite 後端，原生 HTML/CSS/JavaScript 前端，WebSocket 即時更新。
 
 ## 專案結構
@@ -50,7 +52,7 @@ uvicorn backend.main:app --reload
 ## 開發順序
 
 - [x] 1. 資料庫結構 + FastAPI 骨架
-- [ ] 2. 基本 CRUD API
+- [x] 2. 基本 CRUD API
 - [ ] 3. 三個角色的前端頁面
 - [ ] 4. WebSocket 即時更新
 - [ ] 5. Andon 超時邏輯（吧台佇列超時變紅）
