@@ -4,8 +4,10 @@ import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from backend import inventory
 from backend.database import get_db
 from backend.models import IngredientCreate, IngredientUpdate, StockAdjust
+from backend.ws import manager
 
 router = APIRouter(prefix="/api/ingredients", tags=["ingredients"])
 
@@ -23,6 +25,12 @@ def _get_or_404(db: sqlite3.Connection, ingredient_id: int) -> sqlite3.Row:
 def list_ingredients(db: sqlite3.Connection = Depends(get_db)):
     rows = db.execute("SELECT * FROM ingredients ORDER BY name").fetchall()
     return [dict(row) for row in rows]
+
+
+@router.get("/alerts")
+def list_alerts(db: sqlite3.Connection = Depends(get_db)):
+    """低於補貨點（reorder point）的原料列表。"""
+    return inventory.low_stock(db)
 
 
 @router.get("/{ingredient_id}")
@@ -47,7 +55,7 @@ def create_ingredient(
 
 
 @router.patch("/{ingredient_id}")
-def update_ingredient(
+async def update_ingredient(
     ingredient_id: int,
     payload: IngredientUpdate,
     db: sqlite3.Connection = Depends(get_db),
@@ -65,18 +73,20 @@ def update_ingredient(
         db.commit()
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail="原料名稱已存在")
+    if "current_stock" in fields or "reorder_point" in fields:
+        await inventory.broadcast_stock_events(db, manager, [ingredient_id])
     return dict(_get_or_404(db, ingredient_id))
 
 
 @router.patch("/{ingredient_id}/stock")
-def adjust_stock(
+async def adjust_stock(
     ingredient_id: int,
     payload: StockAdjust,
     db: sqlite3.Connection = Depends(get_db),
 ):
     """庫存增減（正數進貨、負數耗損），不會扣到負值以下。"""
     row = _get_or_404(db, ingredient_id)
-    new_stock = row["current_stock"] + payload.delta
+    new_stock = round(row["current_stock"] + payload.delta, 3)
     if new_stock < 0:
         raise HTTPException(
             status_code=409,
@@ -87,6 +97,7 @@ def adjust_stock(
         (new_stock, ingredient_id),
     )
     db.commit()
+    await inventory.broadcast_stock_events(db, manager, [ingredient_id])
     return dict(_get_or_404(db, ingredient_id))
 
 
@@ -96,6 +107,3 @@ def delete_ingredient(ingredient_id: int, db: sqlite3.Connection = Depends(get_d
     # recipes 設了 ON DELETE CASCADE，刪原料會一併移除相關配方項目
     db.execute("DELETE FROM ingredients WHERE id = ?", (ingredient_id,))
     db.commit()
-
-
-# TODO(第六步): 低於 reorder_point 的警示查詢

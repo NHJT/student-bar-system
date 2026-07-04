@@ -39,6 +39,11 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// 數量顯示：去掉浮點誤差與多餘的 0（1.7999999999999998 → 1.8、3.0 → 3）
+function fmtQty(n) {
+  return String(Number(Number(n).toFixed(3)));
+}
+
 // "2026-07-04 18:30:12" → "18:30"
 function formatTime(dbTimestamp) {
   if (!dbTimestamp) return "";

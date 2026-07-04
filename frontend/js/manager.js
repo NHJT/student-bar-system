@@ -58,7 +58,7 @@ document.addEventListener("DOMContentLoaded", () => {
           .map(
             (i) => `
             <li class="low-stock">⚠️ <strong>${escapeHtml(i.name)}</strong>
-              剩 ${i.current_stock} ${escapeHtml(i.unit)}（補貨點 ${i.reorder_point}）</li>`
+              剩 ${fmtQty(i.current_stock)} ${escapeHtml(i.unit)}（補貨點 ${fmtQty(i.reorder_point)}）</li>`
           )
           .join("")
       : '<li class="placeholder">庫存充足 ✓</li>';
@@ -69,9 +69,9 @@ document.addEventListener("DOMContentLoaded", () => {
             (i) => `
             <tr class="${i.current_stock < i.reorder_point ? "row-low" : ""}">
               <td>${escapeHtml(i.name)}</td>
-              <td>${i.current_stock}</td>
+              <td>${fmtQty(i.current_stock)}</td>
               <td>${escapeHtml(i.unit)}</td>
-              <td>${i.reorder_point}</td>
+              <td>${fmtQty(i.reorder_point)}</td>
             </tr>`
           )
           .join("")

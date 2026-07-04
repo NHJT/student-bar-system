@@ -56,5 +56,5 @@ uvicorn backend.main:app --reload
 - [x] 3. 三個角色的前端頁面
 - [x] 4. WebSocket 即時更新
 - [x] 5. Andon 超時邏輯（吧台佇列超時變紅）
-- [ ] 6. 配方庫存連動 + Reorder Point 警示
+- [x] 6. 配方庫存連動 + Reorder Point 警示
 - [ ] 7. 經理儀表板

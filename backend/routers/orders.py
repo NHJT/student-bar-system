@@ -5,6 +5,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from backend import inventory
 from backend.database import get_db
 from backend.models import OrderCreate, OrderPaymentUpdate, OrderStatusUpdate
 from backend.ws import manager
@@ -78,6 +79,15 @@ async def create_order(payload: OrderCreate, db: sqlite3.Connection = Depends(ge
         raise HTTPException(status_code=404, detail="找不到這杯飲料")
     if not drink["is_available"]:
         raise HTTPException(status_code=409, detail=f"「{drink['name']}」目前停售")
+
+    # 依配方扣庫存；任何一項不足就整筆拒單
+    affected, shortages = inventory.check_and_deduct(
+        db, payload.drink_id, payload.quantity
+    )
+    if shortages:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="庫存不足：" + "；".join(shortages))
+
     cur = db.execute(
         "INSERT INTO orders (table_number, drink_id, quantity, special_request) "
         "VALUES (?, ?, ?, ?)",
@@ -89,9 +99,9 @@ async def create_order(payload: OrderCreate, db: sqlite3.Connection = Depends(ge
         ),
     )
     db.commit()
-    # TODO(第六步): 依 recipes 扣減 ingredients.current_stock
     order = dict(_get_or_404(db, cur.lastrowid))
     await manager.broadcast({"event": "order_created", "order": order})
+    await inventory.broadcast_stock_events(db, manager, affected)
     return order
 
 
@@ -116,9 +126,17 @@ async def update_status(
     db.execute(
         f"UPDATE orders SET {', '.join(sets)} WHERE id = ?", (target, order_id)
     )
+
+    # 還沒開始製作就取消 → 把配方用量退回庫存
+    restored: list[int] = []
+    if target == "cancelled" and current == "new":
+        restored = inventory.restore(db, order["drink_id"], order["quantity"])
+
     db.commit()
     updated = dict(_get_or_404(db, order_id))
     await manager.broadcast({"event": "order_updated", "order": updated})
+    if restored:
+        await inventory.broadcast_stock_events(db, manager, restored)
     return updated
 
 
