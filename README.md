@@ -12,7 +12,7 @@ backend/
   database.py      # SQLite 連線與初始化
   schema.sql       # 四張資料表結構
   models.py        # Pydantic 模型
-  seed.py          # 開發用示範資料
+  seed_data.py     # 初始測試資料（飲品/食材/配方）
   ws.py            # WebSocket 連線管理
   routers/
     drinks.py      # 飲料 API
@@ -32,7 +32,7 @@ frontend/
 
 ```bash
 pip install -r requirements.txt
-python -m backend.seed          # （可選）寫入示範資料
+python -m backend.seed_data     # 寫入初始測試資料（可重複執行，已存在會跳過）
 uvicorn backend.main:app --reload
 ```
 
