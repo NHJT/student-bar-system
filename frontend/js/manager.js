@@ -1,10 +1,91 @@
-// 經理頁面（第六、七步實作）
-// - 全局訂單總覽表格 + 各狀態統計
-// - 庫存警示：current_stock < reorder_point 的原料列表
+// 經理頁面：全局訂單總覽 + 庫存警示
+
+const REFRESH_MS = 5000; // 第四步改用 WebSocket 後移除輪詢
 
 document.addEventListener("DOMContentLoaded", () => {
-  // TODO(第七步): apiGet("/orders") 渲染 #order-table-body 與 #order-stats
-  // TODO(第六步): apiGet("/ingredients") 渲染 #stock-table-body，
-  //               低於 reorder_point 者加入 #stock-alerts（.low-stock）
-  // TODO(第四步): connectWebSocket(...) 收到 order_* / stock_alert 事件時刷新
+  const statsRow = document.getElementById("order-stats");
+  const orderBody = document.getElementById("order-table-body");
+  const alertList = document.getElementById("stock-alerts");
+  const stockBody = document.getElementById("stock-table-body");
+
+  async function refreshOrders() {
+    const orders = await apiGet("/orders");
+
+    // 各狀態統計 + 未付款數
+    const counts = {};
+    let unpaid = 0;
+    for (const o of orders) {
+      counts[o.status] = (counts[o.status] ?? 0) + 1;
+      if (o.payment_status === "unpaid" && o.status !== "cancelled") unpaid++;
+    }
+    statsRow.innerHTML =
+      ["new", "preparing", "completed", "delivered"]
+        .map(
+          (s) =>
+            `<div class="stat-card">${STATUS_LABELS[s]}<br><strong>${counts[s] ?? 0}</strong></div>`
+        )
+        .join("") +
+      `<div class="stat-card ${unpaid ? "stat-warn" : ""}">未付款<br><strong>${unpaid}</strong></div>`;
+
+    if (orders.length === 0) {
+      orderBody.innerHTML = '<tr><td colspan="7" class="placeholder">尚無資料</td></tr>';
+      return;
+    }
+    orderBody.innerHTML = [...orders]
+      .reverse() // 新的在上面
+      .map(
+        (o) => `
+        <tr>
+          <td>${o.id}</td>
+          <td>桌 ${o.table_number}</td>
+          <td>${escapeHtml(o.drink_name)}${
+            o.special_request ? `<br><small>📝 ${escapeHtml(o.special_request)}</small>` : ""
+          }</td>
+          <td>${o.quantity}</td>
+          <td>${statusBadge(o.status)}</td>
+          <td><span class="badge ${o.payment_status === "paid" ? "badge-paid" : "badge-unpaid"}">
+            ${o.payment_status === "paid" ? "已付款" : "未付款"}</span></td>
+          <td>${formatTime(o.placed_at)}</td>
+        </tr>`
+      )
+      .join("");
+  }
+
+  async function refreshStock() {
+    const ingredients = await apiGet("/ingredients");
+
+    const low = ingredients.filter((i) => i.current_stock < i.reorder_point);
+    alertList.innerHTML = low.length
+      ? low
+          .map(
+            (i) => `
+            <li class="low-stock">⚠️ <strong>${escapeHtml(i.name)}</strong>
+              剩 ${i.current_stock} ${escapeHtml(i.unit)}（補貨點 ${i.reorder_point}）</li>`
+          )
+          .join("")
+      : '<li class="placeholder">庫存充足 ✓</li>';
+
+    stockBody.innerHTML = ingredients.length
+      ? ingredients
+          .map(
+            (i) => `
+            <tr class="${i.current_stock < i.reorder_point ? "row-low" : ""}">
+              <td>${escapeHtml(i.name)}</td>
+              <td>${i.current_stock}</td>
+              <td>${escapeHtml(i.unit)}</td>
+              <td>${i.reorder_point}</td>
+            </tr>`
+          )
+          .join("")
+      : '<tr><td colspan="4" class="placeholder">尚無資料</td></tr>';
+  }
+
+  function refreshAll() {
+    refreshOrders();
+    refreshStock();
+  }
+
+  refreshAll();
+  setInterval(refreshAll, REFRESH_MS);
+  // TODO(第四步): connectWebSocket(...) 取代輪詢
 });

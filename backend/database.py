@@ -15,7 +15,9 @@ def get_db() -> sqlite3.Connection:
         @app.get(...)
         def endpoint(db: sqlite3.Connection = Depends(get_db)): ...
     """
-    conn = sqlite3.connect(DB_PATH)
+    # FastAPI 同步端點跑在 threadpool，同一請求的建立與收尾可能在不同執行緒；
+    # 連線不跨請求共用，因此關閉同執行緒檢查是安全的
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row  # 讓查詢結果可以用欄位名取值
     conn.execute("PRAGMA foreign_keys = ON")
     try:

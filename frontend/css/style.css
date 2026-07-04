@@ -72,12 +72,45 @@ form input, form select {
 }
 .btn-primary { background: var(--primary); color: #fff; }
 
+.btn-small { padding: .25rem .6rem; font-size: .8rem; background: var(--primary); color: #fff; }
+
 /* ---------- 訂單清單 / 佇列 ---------- */
 .order-list, .order-queue, .alert-list { list-style: none; }
 .order-queue li, .order-list li {
   padding: .75rem; margin-bottom: .5rem;
   border: 1px solid var(--border); border-radius: 8px;
 }
+.order-queue li[data-id] { cursor: pointer; }
+.order-queue li[data-id]:hover { border-color: var(--primary); }
+
+.order-row { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.order-time { color: var(--muted); font-size: .8rem; margin-left: auto; }
+.order-note { margin-top: .35rem; font-size: .85rem; color: var(--muted); }
+.card-action { margin-top: .5rem; font-size: .85rem; color: var(--primary); text-align: right; }
+
+/* ---------- 狀態徽章 ---------- */
+.badge {
+  padding: .1rem .5rem; border-radius: 999px;
+  font-size: .75rem; white-space: nowrap;
+}
+.badge-new       { background: #e7efff; color: var(--primary); }
+.badge-preparing { background: #fdf6ec; color: var(--warning); }
+.badge-completed { background: #e9f6ef; color: var(--ok); }
+.badge-delivered { background: #eef0f3; color: var(--muted); }
+.badge-cancelled { background: #eef0f3; color: var(--muted); text-decoration: line-through; }
+.badge-paid      { background: #e9f6ef; color: var(--ok); }
+.badge-unpaid    { background: #fdecec; color: var(--danger); }
+
+/* ---------- 經理統計卡 ---------- */
+.stat-card {
+  padding: .5rem .9rem; border: 1px solid var(--border); border-radius: 8px;
+  font-size: .8rem; color: var(--muted); text-align: center;
+}
+.stat-card strong { font-size: 1.2rem; color: var(--text); }
+.stat-card.stat-warn { border-color: var(--danger); }
+.stat-card.stat-warn strong { color: var(--danger); }
+
+.row-low td { background: #fdf6ec; }
 
 /* Andon: 超時訂單（第五步由 JS 加上這個 class） */
 .order-queue li.overdue {

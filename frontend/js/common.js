@@ -1,6 +1,15 @@
-// 共用工具：API 呼叫與 WebSocket 連線（三個角色頁面共用）
+// 共用工具：API 呼叫、WebSocket 連線、顯示用小函式（三個角色頁面共用）
 
 const API_BASE = "/api";
+
+// 訂單狀態的中文標籤（class 名同時用於徽章顏色）
+const STATUS_LABELS = {
+  new: "新訂單",
+  preparing: "製作中",
+  completed: "完成待送",
+  delivered: "已送達",
+  cancelled: "已取消",
+};
 
 async function apiGet(path) {
   const res = await fetch(`${API_BASE}${path}`);
@@ -12,10 +21,32 @@ async function apiSend(method, path, body) {
   const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers: { "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(`${method} ${path} 失敗: ${res.status}`);
+  if (!res.ok) {
+    let detail = `${res.status}`;
+    try { detail = (await res.json()).detail ?? detail; } catch (_) {}
+    throw new Error(detail);
+  }
+  if (res.status === 204) return null;
   return res.json();
+}
+
+// 防止使用者輸入（特殊需求等）被當成 HTML
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text ?? "";
+  return div.innerHTML;
+}
+
+// "2026-07-04 18:30:12" → "18:30"
+function formatTime(dbTimestamp) {
+  if (!dbTimestamp) return "";
+  return dbTimestamp.slice(11, 16);
+}
+
+function statusBadge(status) {
+  return `<span class="badge badge-${status}">${STATUS_LABELS[status] ?? status}</span>`;
 }
 
 // 建立 WebSocket 連線；onMessage 會收到伺服器廣播的事件物件
