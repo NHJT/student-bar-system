@@ -1,7 +1,5 @@
 // 經理頁面：全局訂單總覽 + 庫存警示
 
-const REFRESH_MS = 5000; // 第四步改用 WebSocket 後移除輪詢
-
 document.addEventListener("DOMContentLoaded", () => {
   const statsRow = document.getElementById("order-stats");
   const orderBody = document.getElementById("order-table-body");
@@ -85,7 +83,10 @@ document.addEventListener("DOMContentLoaded", () => {
     refreshStock();
   }
 
-  refreshAll();
-  setInterval(refreshAll, REFRESH_MS);
-  // TODO(第四步): connectWebSocket(...) 取代輪詢
+  // 即時更新：訂單事件刷新訂單區；庫存事件（第六步加入）刷新庫存區；
+  // 重連成功時全部補抓
+  connectWebSocket((msg) => {
+    if (msg.event?.startsWith("order_")) refreshOrders();
+    if (msg.event === "stock_alert" || msg.event?.startsWith("ingredient_")) refreshStock();
+  }, refreshAll);
 });

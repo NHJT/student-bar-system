@@ -1,6 +1,6 @@
-"""WebSocket 連線管理（第四步實作內容）。
+"""WebSocket 連線管理。
 
-規劃：所有角色頁面連到 /ws，伺服器在訂單建立 / 狀態變更 /
+所有角色頁面連到 /ws，伺服器在訂單建立 / 狀態變更 /
 庫存警示時廣播 JSON 事件，例如:
     {"event": "order_created", "order": {...}}
     {"event": "order_updated", "order": {...}}

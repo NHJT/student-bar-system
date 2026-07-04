@@ -49,20 +49,22 @@ function statusBadge(status) {
   return `<span class="badge badge-${status}">${STATUS_LABELS[status] ?? status}</span>`;
 }
 
-// 建立 WebSocket 連線；onMessage 會收到伺服器廣播的事件物件
-// （第四步實作伺服器端廣播後即可運作）
-function connectWebSocket(onMessage) {
+// 建立 WebSocket 連線
+// - onMessage: 收到伺服器廣播的事件物件（{event: "order_created", order: {...}} 等）
+// - onOpen: 連上（含斷線重連成功）時呼叫，用來補抓斷線期間錯過的資料
+function connectWebSocket(onMessage, onOpen) {
   const statusEl = document.getElementById("ws-status");
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${proto}://${location.host}/ws`);
 
   ws.onopen = () => {
     if (statusEl) { statusEl.textContent = "● 已連線"; statusEl.className = "ws-status connected"; }
+    if (onOpen) onOpen();
   };
   ws.onmessage = (e) => onMessage(JSON.parse(e.data));
   ws.onclose = () => {
     if (statusEl) { statusEl.textContent = "● 已斷線，5 秒後重連"; statusEl.className = "ws-status disconnected"; }
-    setTimeout(() => connectWebSocket(onMessage), 5000);
+    setTimeout(() => connectWebSocket(onMessage, onOpen), 5000);
   };
   return ws;
 }

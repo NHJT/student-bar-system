@@ -1,7 +1,6 @@
 // 吧台頁面：三欄訂單佇列，點卡片推進狀態
 // new → preparing → completed → delivered（delivered 後離開佇列）
 
-const REFRESH_MS = 3000; // 第四步改用 WebSocket 後移除輪詢
 const ANDON_TIMEOUT_MINUTES = 5; // 超時門檻（第五步使用）
 
 const NEXT_STATUS = { new: "preparing", preparing: "completed", completed: "delivered" };
@@ -55,7 +54,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  refresh();
-  setInterval(refresh, REFRESH_MS);
-  // TODO(第四步): connectWebSocket(...) 取代輪詢
+  // 即時更新：收到訂單事件就刷新；重連成功時補抓斷線期間的變化
+  connectWebSocket(
+    (msg) => { if (msg.event?.startsWith("order_")) refresh(); },
+    () => refresh()
+  );
 });

@@ -1,7 +1,5 @@
 // 服務生頁面：點餐、選桌號、標記付款
 
-const REFRESH_MS = 3000; // 第四步改用 WebSocket 後移除輪詢
-
 document.addEventListener("DOMContentLoaded", () => {
   const tableSelect = document.getElementById("table-number");
   const drinkSelect = document.getElementById("drink-select");
@@ -82,7 +80,9 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   loadDrinks();
-  refreshOrders();
-  setInterval(refreshOrders, REFRESH_MS);
-  // TODO(第四步): connectWebSocket(...) 取代輪詢
+  // 即時更新：收到訂單事件就刷新；重連成功時補抓斷線期間的變化
+  connectWebSocket(
+    (msg) => { if (msg.event?.startsWith("order_")) refreshOrders(); },
+    () => refreshOrders()
+  );
 });

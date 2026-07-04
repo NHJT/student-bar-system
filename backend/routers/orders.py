@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from backend.database import get_db
 from backend.models import OrderCreate, OrderPaymentUpdate, OrderStatusUpdate
+from backend.ws import manager
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
@@ -67,7 +68,7 @@ def get_order(order_id: int, db: sqlite3.Connection = Depends(get_db)):
 
 
 @router.post("", status_code=201)
-def create_order(payload: OrderCreate, db: sqlite3.Connection = Depends(get_db)):
+async def create_order(payload: OrderCreate, db: sqlite3.Connection = Depends(get_db)):
     if payload.quantity < 1:
         raise HTTPException(status_code=400, detail="數量至少為 1")
     drink = db.execute(
@@ -88,13 +89,14 @@ def create_order(payload: OrderCreate, db: sqlite3.Connection = Depends(get_db))
         ),
     )
     db.commit()
-    # TODO(第四步): 廣播 order_created 事件
     # TODO(第六步): 依 recipes 扣減 ingredients.current_stock
-    return dict(_get_or_404(db, cur.lastrowid))
+    order = dict(_get_or_404(db, cur.lastrowid))
+    await manager.broadcast({"event": "order_created", "order": order})
+    return order
 
 
 @router.patch("/{order_id}/status")
-def update_status(
+async def update_status(
     order_id: int,
     payload: OrderStatusUpdate,
     db: sqlite3.Connection = Depends(get_db),
@@ -115,12 +117,13 @@ def update_status(
         f"UPDATE orders SET {', '.join(sets)} WHERE id = ?", (target, order_id)
     )
     db.commit()
-    # TODO(第四步): 廣播 order_updated 事件
-    return dict(_get_or_404(db, order_id))
+    updated = dict(_get_or_404(db, order_id))
+    await manager.broadcast({"event": "order_updated", "order": updated})
+    return updated
 
 
 @router.patch("/{order_id}/payment")
-def update_payment(
+async def update_payment(
     order_id: int,
     payload: OrderPaymentUpdate,
     db: sqlite3.Connection = Depends(get_db),
@@ -136,5 +139,6 @@ def update_payment(
         (payload.payment_status, order_id),
     )
     db.commit()
-    # TODO(第四步): 廣播 order_updated 事件
-    return dict(_get_or_404(db, order_id))
+    updated = dict(_get_or_404(db, order_id))
+    await manager.broadcast({"event": "order_updated", "order": updated})
+    return updated
