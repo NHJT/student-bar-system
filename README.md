@@ -1,6 +1,6 @@
 # 學生酒吧點餐與庫存管理系統
 
-作者：developer
+作者：Jeff Lin
 
 Python + FastAPI + SQLite 後端，原生 HTML/CSS/JavaScript 前端，WebSocket 即時更新。
 
