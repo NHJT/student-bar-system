@@ -1,10 +1,61 @@
-// 經理頁面：全局訂單總覽 + 庫存警示
+// 經理頁面：儀表板（今日 KPI、熱門品項、超時訂單）+ 訂單總覽 + 庫存警示
 
 document.addEventListener("DOMContentLoaded", () => {
+  const kpiRow = document.getElementById("kpi-row");
+  const topDrinks = document.getElementById("top-drinks");
+  const overdueList = document.getElementById("overdue-list");
   const statsRow = document.getElementById("order-stats");
   const orderBody = document.getElementById("order-table-body");
   const alertList = document.getElementById("stock-alerts");
   const stockBody = document.getElementById("stock-table-body");
+
+  function kpiTile(label, value, warn = false) {
+    return `
+      <div class="stat-tile ${warn ? "stat-warn" : ""}">
+        <div class="stat-label">${label}</div>
+        <div class="stat-value">${value}</div>
+      </div>`;
+  }
+
+  async function refreshStats() {
+    const s = await apiGet("/stats");
+
+    kpiRow.innerHTML = [
+      kpiTile("今日訂單", s.today_orders),
+      kpiTile("售出杯數", s.drinks_sold),
+      kpiTile("平均製作時間", s.avg_prep_minutes == null ? "－" : `${s.avg_prep_minutes} 分`),
+      kpiTile("未付款", s.unpaid, s.unpaid > 0),
+      kpiTile(`超時訂單（>${s.andon_timeout_minutes}分）`, s.overdue.length, s.overdue.length > 0),
+    ].join("");
+
+    // 熱門品項：單一色相水平長條，值直接標在條尾
+    if (s.top_drinks.length === 0) {
+      topDrinks.innerHTML = '<span class="placeholder">今日尚無售出</span>';
+    } else {
+      const max = s.top_drinks[0].qty;
+      topDrinks.innerHTML = s.top_drinks
+        .map(
+          (d) => `
+          <div class="bar-row" title="${escapeHtml(d.name)}：${d.qty} 杯">
+            <span class="bar-name">${escapeHtml(d.name)}</span>
+            <span class="bar-track"><span class="bar-fill" style="width:${(d.qty / max) * 100}%"></span></span>
+            <span class="bar-value">${d.qty}</span>
+          </div>`
+        )
+        .join("");
+    }
+
+    overdueList.innerHTML = s.overdue.length
+      ? s.overdue
+          .map(
+            (o) => `
+            <li class="overdue-item">⏱ <strong>桌 ${o.table_number}</strong>
+              ${escapeHtml(o.drink_name)} × ${o.quantity}
+              ・ ${STATUS_LABELS[o.status]} 已卡 ${o.minutes_stuck} 分</li>`
+          )
+          .join("")
+      : '<li class="placeholder">目前沒有超時訂單 ✓</li>';
+  }
 
   async function refreshOrders() {
     const orders = await apiGet("/orders");
@@ -79,14 +130,21 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function refreshAll() {
+    refreshStats();
     refreshOrders();
     refreshStock();
   }
 
-  // 即時更新：訂單事件刷新訂單區；庫存事件（第六步加入）刷新庫存區；
+  // 即時更新：訂單事件刷新統計與訂單區；庫存事件刷新庫存區；
   // 重連成功時全部補抓
   connectWebSocket((msg) => {
-    if (msg.event?.startsWith("order_")) refreshOrders();
+    if (msg.event?.startsWith("order_")) {
+      refreshStats();
+      refreshOrders();
+    }
     if (msg.event === "stock_alert" || msg.event?.startsWith("ingredient_")) refreshStock();
   }, refreshAll);
+
+  // 「超時訂單」會隨時間增加而沒有任何事件，每 30 秒重算一次
+  setInterval(refreshStats, 30000);
 });

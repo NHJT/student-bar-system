@@ -12,24 +12,21 @@
     <span id="ws-status" class="ws-status">連線中…</span>
   </header>
 
+  <!-- 今日頭條數字 -->
+  <section class="kpi-row" id="kpi-row"></section>
+
   <main class="layout-two-col">
-    <!-- 全局訂單總覽（第七步實作） -->
+    <!-- 今日熱門品項 + 超時訂單 -->
     <section class="panel">
-      <h2>訂單總覽</h2>
-      <div id="order-stats" class="stats-row">
-        <!-- 例：各狀態數量、未付款金額 -->
-      </div>
-      <table class="order-table">
-        <thead>
-          <tr><th>#</th><th>桌號</th><th>飲料</th><th>數量</th><th>狀態</th><th>付款</th><th>下單時間</th></tr>
-        </thead>
-        <tbody id="order-table-body">
-          <tr><td colspan="7" class="placeholder">尚無資料</td></tr>
-        </tbody>
-      </table>
+      <h2>今日熱門品項</h2>
+      <div id="top-drinks" class="bar-list"><span class="placeholder">尚無資料</span></div>
+      <h2>⏱ 超時訂單（Andon）</h2>
+      <ul id="overdue-list" class="alert-list">
+        <li class="placeholder">目前沒有超時訂單</li>
+      </ul>
     </section>
 
-    <!-- 庫存警示（第六步實作 Reorder Point） -->
+    <!-- 庫存警示 -->
     <section class="panel">
       <h2>庫存警示</h2>
       <ul id="stock-alerts" class="alert-list">
@@ -42,6 +39,22 @@
         </thead>
         <tbody id="stock-table-body">
           <tr><td colspan="4" class="placeholder">尚無資料</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <main class="layout-one-col">
+    <!-- 全局訂單總覽 -->
+    <section class="panel">
+      <h2>訂單總覽</h2>
+      <div id="order-stats" class="stats-row"></div>
+      <table class="order-table">
+        <thead>
+          <tr><th>#</th><th>桌號</th><th>飲料</th><th>數量</th><th>狀態</th><th>付款</th><th>下單時間</th></tr>
+        </thead>
+        <tbody id="order-table-body">
+          <tr><td colspan="7" class="placeholder">尚無資料</td></tr>
         </tbody>
       </table>
     </section>

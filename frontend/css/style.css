@@ -43,11 +43,13 @@ body {
 .ws-status.connected { color: var(--ok); }
 .ws-status.disconnected { color: var(--danger); }
 
-.layout-two-col, .layout-three-col {
+.layout-one-col, .layout-two-col, .layout-three-col {
   display: grid; gap: 1rem; padding: 1rem;
 }
+.layout-one-col { grid-template-columns: 1fr; padding-top: 0; }
 .layout-two-col { grid-template-columns: 1fr 1fr; }
 .layout-three-col { grid-template-columns: 1fr 1fr 1fr; }
+.layout-two-col + .layout-one-col, .kpi-row + .layout-two-col { padding-top: 0; }
 @media (max-width: 900px) {
   .layout-two-col, .layout-three-col { grid-template-columns: 1fr; }
 }
@@ -139,3 +141,41 @@ th, td { text-align: left; padding: .5rem; border-bottom: 1px solid var(--border
 th { color: var(--muted); font-weight: 600; }
 
 .stats-row { display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+
+/* ---------- 儀表板：KPI 統計磚 ---------- */
+.kpi-row {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1rem; padding: 1rem 1rem 0;
+}
+.stat-tile {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: .75rem 1rem;
+}
+.stat-tile .stat-label { font-size: .8rem; color: var(--muted); }
+.stat-tile .stat-value { font-size: 1.6rem; font-weight: 600; margin-top: .15rem; }
+.stat-tile.stat-warn { border-color: var(--danger); }
+.stat-tile.stat-warn .stat-value { color: var(--danger); }
+
+/* ---------- 儀表板：熱門品項長條 ---------- */
+.bar-list { display: flex; flex-direction: column; gap: .5rem; margin-bottom: 1.25rem; }
+.bar-row {
+  display: grid; grid-template-columns: minmax(7em, auto) 1fr 2.5em;
+  align-items: center; gap: .6rem; font-size: .9rem;
+}
+.bar-name { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar-track { display: block; }
+.bar-fill {
+  display: block; height: 14px; background: var(--primary);
+  border-radius: 0 4px 4px 0; /* 資料端圓角，基線端方角 */
+  min-width: 2px;
+}
+.bar-value { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- 儀表板：超時訂單 ---------- */
+.alert-list li.overdue-item {
+  border-left: 4px solid var(--danger);
+  padding: .5rem .75rem; margin-bottom: .5rem;
+  background: #fdecec; border-radius: 4px;
+}
+
+.panel h2:not(:first-child) { margin-top: 1.25rem; }

@@ -13,16 +13,19 @@ backend/
   schema.sql       # 四張資料表結構
   models.py        # Pydantic 模型
   seed_data.py     # 初始測試資料（飲品/食材/配方）
+  inventory.py     # 配方庫存連動（下單扣料/取消退料/補貨警示）
   ws.py            # WebSocket 連線管理
   routers/
     drinks.py      # 飲料 API
     ingredients.py # 原料庫存 API
     orders.py      # 訂單 API
+    recipes.py     # 配方 API
+    stats.py       # 經理儀表板統計 API
 frontend/
   index.html       # 角色選擇首頁
   waiter.html      # 服務生：點餐、桌號、標記付款
   bar.html         # 吧台：訂單佇列、狀態切換、Andon 超時
-  manager.html     # 經理：訂單總覽、庫存警示
+  manager.html     # 經理：今日 KPI、熱門品項、超時訂單、訂單總覽、庫存警示
   css/style.css
   js/common.js     # 共用 API / WebSocket 工具
   js/waiter.js  js/bar.js  js/manager.js
@@ -57,4 +60,4 @@ uvicorn backend.main:app --reload
 - [x] 4. WebSocket 即時更新
 - [x] 5. Andon 超時邏輯（吧台佇列超時變紅）
 - [x] 6. 配方庫存連動 + Reorder Point 警示
-- [ ] 7. 經理儀表板
+- [x] 7. 經理儀表板
