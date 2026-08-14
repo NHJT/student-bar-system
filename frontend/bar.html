@@ -9,24 +9,36 @@
 <body>
   <header class="topbar">
     <h1>🍸 吧台訂單佇列</h1>
-    <span id="ws-status" class="ws-status">連線中…</span>
+    <span>
+      <span id="sound-hint" class="sound-hint">🔇 點畫面任一處以啟用警示音</span>
+      <span id="ws-status" class="ws-status">連線中…</span>
+    </span>
   </header>
 
-  <!-- 訂單佇列（第三步實作；第五步加入 Andon 超時變紅） -->
+  <!-- 訂單佇列；Andon 三段式超時門檻見 common.js -->
   <main class="layout-three-col">
     <section class="panel queue-col" data-status="new">
-      <h2>🆕 新訂單</h2>
+      <h2>🆕 新訂單 <small>逾 5 分未開始</small></h2>
       <ul id="queue-new" class="order-queue"></ul>
     </section>
     <section class="panel queue-col" data-status="preparing">
-      <h2>🔧 製作中</h2>
+      <h2>🔧 製作中 <small>逾 10 分未完成</small></h2>
       <ul id="queue-preparing" class="order-queue"></ul>
     </section>
     <section class="panel queue-col" data-status="completed">
-      <h2>✅ 完成待送</h2>
+      <h2>✅ 待送達 <small>逾 3 分未送出</small></h2>
       <ul id="queue-completed" class="order-queue"></ul>
     </section>
   </main>
+
+  <!-- Andon 超時跳出視窗 -->
+  <div id="andon-modal" class="modal-backdrop" hidden>
+    <div class="modal" role="alertdialog" aria-labelledby="andon-modal-title">
+      <h2 id="andon-modal-title">⚠️ 訂單超時</h2>
+      <ul id="andon-modal-body" class="alert-list"></ul>
+      <button id="andon-modal-close" class="btn btn-primary">知道了</button>
+    </div>
+  </div>
 
   <script src="/js/common.js"></script>
   <script src="/js/bar.js"></script>

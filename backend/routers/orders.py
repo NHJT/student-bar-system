@@ -7,7 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from backend import inventory
 from backend.database import get_db
-from backend.models import OrderCreate, OrderPaymentUpdate, OrderStatusUpdate
+from backend.models import (
+    OrderCreate,
+    OrderEdit,
+    OrderPaymentUpdate,
+    OrderStatusUpdate,
+)
 from backend.ws import manager
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
@@ -103,6 +108,66 @@ async def create_order(payload: OrderCreate, db: sqlite3.Connection = Depends(ge
     await manager.broadcast({"event": "order_created", "order": order})
     await inventory.broadcast_stock_events(db, manager, affected)
     return order
+
+
+@router.patch("/{order_id}")
+async def edit_order(
+    order_id: int, payload: OrderEdit, db: sqlite3.Connection = Depends(get_db)
+):
+    """服務生修改訂單（品項／數量／特殊需求）。
+
+    只有還沒進入製作（status = 'new'）的訂單可以改；每次修改 edit_count + 1，
+    作為輸入錯誤率的量測依據。品項或數量改變時，庫存會先退回原配方用量、
+    再依新內容扣料。
+    """
+    order = _get_or_404(db, order_id)
+    if order["status"] != "new":
+        raise HTTPException(
+            status_code=409,
+            detail=f"訂單已是「{order['status']}」狀態，無法修改",
+        )
+
+    fields = payload.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(status_code=400, detail="沒有要修改的欄位")
+
+    new_drink_id = fields.get("drink_id", order["drink_id"])
+    new_quantity = fields.get("quantity", order["quantity"])
+    if new_quantity < 1:
+        raise HTTPException(status_code=400, detail="數量至少為 1")
+
+    drink = db.execute("SELECT * FROM drinks WHERE id = ?", (new_drink_id,)).fetchone()
+    if drink is None:
+        raise HTTPException(status_code=404, detail="找不到這杯飲料")
+    if not drink["is_available"]:
+        raise HTTPException(status_code=409, detail=f"「{drink['name']}」目前停售")
+
+    # 品項或數量有變才動庫存：先退回原本用量，再依新內容扣料
+    affected: list[int] = []
+    if new_drink_id != order["drink_id"] or new_quantity != order["quantity"]:
+        restored = inventory.restore(db, order["drink_id"], order["quantity"])
+        deducted, shortages = inventory.check_and_deduct(
+            db, new_drink_id, new_quantity
+        )
+        if shortages:
+            db.rollback()  # 連同退料一起復原，訂單維持原樣
+            raise HTTPException(
+                status_code=409, detail="庫存不足：" + "；".join(shortages)
+            )
+        affected = list(dict.fromkeys(restored + deducted))
+
+    fields["edit_count"] = order["edit_count"] + 1
+    sets = ", ".join(f"{name} = ?" for name in fields)
+    db.execute(
+        f"UPDATE orders SET {sets} WHERE id = ?", (*fields.values(), order_id)
+    )
+    db.commit()
+
+    updated = dict(_get_or_404(db, order_id))
+    await manager.broadcast({"event": "order_updated", "order": updated})
+    if affected:
+        await inventory.broadcast_stock_events(db, manager, affected)
+    return updated
 
 
 @router.patch("/{order_id}/status")

@@ -81,12 +81,21 @@ class OrderCreate(BaseModel):
     special_request: Optional[str] = None
 
 
+class OrderEdit(BaseModel):
+    """服務生修改訂單（僅限尚未進入製作的訂單），只帶要改的欄位。"""
+
+    drink_id: Optional[int] = None
+    quantity: Optional[int] = None
+    special_request: Optional[str] = None
+
+
 class Order(BaseModel):
     id: int
     table_number: int
     drink_id: int
     quantity: int
     special_request: Optional[str] = None
+    edit_count: int = 0
     status: str  # new / preparing / completed / delivered / cancelled
     payment_status: str  # unpaid / paid
     placed_at: str

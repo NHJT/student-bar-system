@@ -25,7 +25,8 @@ document.addEventListener("DOMContentLoaded", () => {
       kpiTile("售出杯數", s.drinks_sold),
       kpiTile("平均製作時間", s.avg_prep_minutes == null ? "－" : `${s.avg_prep_minutes} 分`),
       kpiTile("未付款", s.unpaid, s.unpaid > 0),
-      kpiTile(`超時訂單（>${s.andon_timeout_minutes}分）`, s.overdue.length, s.overdue.length > 0),
+      kpiTile("超時訂單", s.overdue.length, s.overdue.length > 0),
+      kpiTile("訂單修改率", `${s.edit_rate}%`, s.edited_orders > 0),
     ].join("");
 
     // 熱門品項：單一色相水平長條，值直接標在條尾
@@ -51,7 +52,8 @@ document.addEventListener("DOMContentLoaded", () => {
             (o) => `
             <li class="overdue-item">⏱ <strong>桌 ${o.table_number}</strong>
               ${escapeHtml(o.drink_name)} × ${o.quantity}
-              ・ ${STATUS_LABELS[o.status]} 已卡 ${o.minutes_stuck} 分</li>`
+              ・ ${STATUS_LABELS[o.status]} 已卡 ${o.minutes_stuck} 分
+              （門檻 ${o.threshold_minutes} 分）</li>`
           )
           .join("")
       : '<li class="placeholder">目前沒有超時訂單 ✓</li>';
@@ -77,7 +79,7 @@ document.addEventListener("DOMContentLoaded", () => {
       `<div class="stat-card ${unpaid ? "stat-warn" : ""}">未付款<br><strong>${unpaid}</strong></div>`;
 
     if (orders.length === 0) {
-      orderBody.innerHTML = '<tr><td colspan="7" class="placeholder">尚無資料</td></tr>';
+      orderBody.innerHTML = '<tr><td colspan="9" class="placeholder">尚無資料</td></tr>';
       return;
     }
     orderBody.innerHTML = [...orders]
@@ -95,6 +97,8 @@ document.addEventListener("DOMContentLoaded", () => {
           <td><span class="badge ${o.payment_status === "paid" ? "badge-paid" : "badge-unpaid"}">
             ${o.payment_status === "paid" ? "已付款" : "未付款"}</span></td>
           <td>${formatTime(o.placed_at)}</td>
+          <td>${formatTime(o.completed_at) || "—"}</td>
+          <td>${formatTime(o.delivered_at) || "—"}</td>
         </tr>`
       )
       .join("");

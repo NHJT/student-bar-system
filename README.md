@@ -23,8 +23,8 @@ backend/
     stats.py       # 經理儀表板統計 API
 frontend/
   index.html       # 角色選擇首頁
-  waiter.html      # 服務生：點餐、桌號、標記付款
-  bar.html         # 吧台：訂單佇列、狀態切換、Andon 超時
+  waiter.html      # 服務生：點餐、桌號、標記付款、修改／取消未製作的訂單
+  bar.html         # 吧台：訂單佇列、狀態切換、Andon 超時（變紅＋跳窗＋警示音）
   manager.html     # 經理：今日 KPI、熱門品項、超時訂單、訂單總覽、庫存警示
   css/style.css
   js/common.js     # 共用 API / WebSocket 工具
@@ -48,9 +48,25 @@ uvicorn backend.main:app --reload
 | drinks | id, name, category, is_available |
 | ingredients | id, name, unit, current_stock, reorder_point |
 | recipes | drink_id, ingredient_id, quantity_needed |
-| orders | id, table_number, drink_id, quantity, special_request, status, payment_status, placed_at, started_at, completed_at, delivered_at |
+| orders | id, table_number, drink_id, quantity, special_request, status, payment_status, edit_count, placed_at, started_at, completed_at, delivered_at |
+
+`edit_count` 記錄服務生修改該筆訂單的次數，作為輸入錯誤率的量測依據。
+新增欄位時要同時登記到 `database.py` 的 `_MIGRATIONS`，既有的 `bar.db` 才會一起升級。
 
 訂單狀態流：`new → preparing → completed → delivered`（可 `cancelled`）；付款：`unpaid → paid`。
+訂單只有在 `new` 階段可以修改或取消，取消時食材會退回庫存。
+
+## Andon 超時門檻
+
+| 狀態 | 計時起點 | 預設門檻 |
+|---|---|---|
+| 新訂單（未開始製作） | `placed_at` | 5 分鐘 |
+| 製作中 | `started_at` | 10 分鐘 |
+| 待送達（完成未送出） | `completed_at` | 3 分鐘 |
+
+超時的卡片會變紅、跳出視窗並播放警示音。要調整門檻請同時改
+`frontend/js/common.js` 的 `ANDON_THRESHOLDS` 與 `backend/routers/stats.py` 的
+`ANDON_THRESHOLDS`（前者管吧台看板，後者管經理儀表板的超時清單）。
 
 ## 開發順序
 

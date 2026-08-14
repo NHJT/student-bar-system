@@ -6,9 +6,16 @@ const API_BASE = "/api";
 const STATUS_LABELS = {
   new: "新訂單",
   preparing: "製作中",
-  completed: "完成待送",
+  completed: "待送達",
   delivered: "已送達",
   cancelled: "已取消",
+};
+
+// 三段式 Andon 超時門檻（分鐘）——與後端 stats.py 的 ANDON_THRESHOLDS 一致
+const ANDON_THRESHOLDS = {
+  new: 5, // 未開始製作
+  preparing: 10, // 製作中
+  completed: 3, // 完成後未送達
 };
 
 async function apiGet(path) {

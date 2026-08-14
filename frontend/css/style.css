@@ -75,6 +75,42 @@ form input, form select {
 .btn-primary { background: var(--primary); color: #fff; }
 
 .btn-small { padding: .25rem .6rem; font-size: .8rem; background: var(--primary); color: #fff; }
+.btn-ghost { background: transparent; color: var(--primary); border: 1px solid var(--border); }
+.btn-danger { background: var(--danger); color: #fff; }
+
+/* ---------- 服務生：就地修改訂單 ---------- */
+/* 這個表單不在 <form> 內，所以欄位樣式要自己寫一份 */
+.order-list li.editing { border-color: var(--primary); background: #f7f9ff; }
+.edit-form label {
+  display: block; margin-top: .6rem; font-size: .85rem; color: var(--muted);
+}
+.edit-form input, .edit-form select {
+  display: block; width: 100%; margin-top: .2rem; padding: .45rem;
+  border: 1px solid var(--border); border-radius: 8px;
+  font-size: .95rem; color: var(--text); background: var(--panel);
+}
+.edit-actions { display: flex; gap: .5rem; margin-top: .9rem; }
+.edit-actions .btn { flex: 0 0 auto; }
+
+/* ---------- Andon 超時跳出視窗 ---------- */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(20, 24, 32, .55);
+  display: flex; align-items: center; justify-content: center; padding: 1rem;
+}
+.modal-backdrop[hidden] { display: none; }
+.modal {
+  background: var(--panel); border-radius: 12px; padding: 1.25rem;
+  max-width: 520px; width: 100%;
+  border-top: 5px solid var(--danger);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .25);
+}
+.modal h2 { color: var(--danger); margin-bottom: .75rem; }
+.modal .btn { margin-top: 1rem; width: 100%; }
+.modal-reason { font-size: .85rem; color: var(--muted); margin-top: .2rem; }
+
+.sound-hint { font-size: .8rem; color: var(--warning); margin-right: .75rem; }
+.queue-col h2 small { color: var(--muted); font-weight: 400; font-size: .75rem; }
 
 /* ---------- 訂單清單 / 佇列 ---------- */
 .order-list, .order-queue, .alert-list { list-style: none; }
@@ -102,6 +138,7 @@ form input, form select {
 .badge-cancelled { background: #eef0f3; color: var(--muted); text-decoration: line-through; }
 .badge-paid      { background: #e9f6ef; color: var(--ok); }
 .badge-unpaid    { background: #fdecec; color: var(--danger); }
+.badge-edited    { background: #fdf6ec; color: var(--warning); }
 
 /* ---------- 經理統計卡 ---------- */
 .stat-card {

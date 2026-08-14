@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS orders (
                     CHECK (status IN ('new', 'preparing', 'completed', 'delivered', 'cancelled')),
     payment_status  TEXT    NOT NULL DEFAULT 'unpaid'
                     CHECK (payment_status IN ('unpaid', 'paid')),
+    edit_count      INTEGER NOT NULL DEFAULT 0,  -- 服務生修改次數（輸入錯誤率量測）
     placed_at       TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
     started_at      TEXT,   -- 吧台開始製作
     completed_at    TEXT,   -- 製作完成
