@@ -1,18 +1,25 @@
 """學生酒吧點餐與庫存管理系統 — FastAPI 進入點。
 
-啟動方式（在專案根目錄）:
+啟動方式（在專案根目錄，需先設定 DATABASE_URL）:
     uvicorn backend.main:app --reload
+
+資料表不會在啟動時自動建立，第一次部署請手動執行:
+    python init_db.py --seed
 """
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
-from backend.database import init_db
+from backend.database import engine
 from backend.routers import drinks, ingredients, orders, recipes, stats
 from backend.ws import manager
+
+logger = logging.getLogger("uvicorn.error")
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
@@ -29,7 +36,16 @@ class NoCacheStaticFiles(StaticFiles):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()  # 啟動時自動建立資料表
+    """啟動時只檢查連線與資料表是否就緒，不自動建表（交給 init_db.py）。"""
+    try:
+        with engine.connect() as conn:
+            ready = conn.execute(text("SELECT to_regclass('public.orders')")).scalar()
+        if ready:
+            logger.info("資料庫連線正常，資料表已就緒")
+        else:
+            logger.warning("資料庫連線正常，但找不到資料表，請執行: python init_db.py --seed")
+    except Exception as exc:
+        logger.error("無法連線資料庫: %s", exc)
     yield
 
 

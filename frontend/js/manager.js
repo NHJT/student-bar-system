@@ -297,6 +297,10 @@ document.addEventListener("DOMContentLoaded", () => {
       .map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`)
       .join("");
     if (drinks.some((d) => String(d.id) === keep)) recipeSelect.value = keep;
+
+    // 選中的飲品被刪掉時，選單會自動跳到別杯；程式改動 value 不會觸發 change，
+    // 這裡要手動重載，否則畫面上留著前一杯的配方，按下儲存就會寫錯對象
+    if (recipeSelect.value !== keep) await loadRecipe();
   }
 
   drinkBody.addEventListener("click", async (e) => {

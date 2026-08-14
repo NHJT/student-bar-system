@@ -4,7 +4,11 @@ __pycache__/
 .venv/
 venv/
 
-# SQLite 資料庫（開發時由程式自動建立）
+# 本機環境變數（DATABASE_URL 等，切勿進版控）
+.env
+.env.local
+
+# 舊版 SQLite 遺留檔案
 *.db
 *.sqlite3
 

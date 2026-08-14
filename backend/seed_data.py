@@ -1,14 +1,15 @@
 """初始測試資料：飲品、食材、配方。
 
-執行（在專案根目錄）:
+執行（在專案根目錄，需先設定 DATABASE_URL）:
     python -m backend.seed_data
+    python init_db.py --seed      # 連資料表一起建立
 
 可重複執行：已存在的資料會自動跳過，不會重複新增。
 """
 
-import sqlite3
+from sqlalchemy import text
 
-from backend.database import DB_PATH, init_db
+from backend.database import engine, init_db
 
 # (name, category)
 DRINKS = [
@@ -42,46 +43,59 @@ RECIPES = {
 
 def seed() -> None:
     init_db()
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA foreign_keys = ON")
-    try:
-        before = conn.total_changes
+    with engine.connect() as conn:
+        drinks_added = conn.execute(
+            text(
+                "INSERT INTO drinks (name, category) VALUES (:name, :category) "
+                "ON CONFLICT (name) DO NOTHING"
+            ),
+            [{"name": n, "category": c} for n, c in DRINKS],
+        ).rowcount
 
-        conn.executemany(
-            "INSERT OR IGNORE INTO drinks (name, category) VALUES (?, ?)", DRINKS
-        )
-        drinks_added = conn.total_changes - before
+        ingredients_added = conn.execute(
+            text(
+                "INSERT INTO ingredients (name, unit, current_stock, reorder_point) "
+                "VALUES (:name, :unit, :stock, :reorder) "
+                "ON CONFLICT (name) DO NOTHING"
+            ),
+            [
+                {"name": n, "unit": u, "stock": s, "reorder": r}
+                for n, u, s, r in INGREDIENTS
+            ],
+        ).rowcount
 
-        before = conn.total_changes
-        conn.executemany(
-            "INSERT OR IGNORE INTO ingredients (name, unit, current_stock, reorder_point) "
-            "VALUES (?, ?, ?, ?)",
-            INGREDIENTS,
-        )
-        ingredients_added = conn.total_changes - before
-
-        before = conn.total_changes
+        recipes_added = 0
         for drink_name, items in RECIPES.items():
             for ingredient_name, qty in items:
-                conn.execute(
-                    """
-                    INSERT OR IGNORE INTO recipes (drink_id, ingredient_id, quantity_needed)
-                    SELECT d.id, i.id, ?
-                    FROM drinks d, ingredients i
-                    WHERE d.name = ? AND i.name = ?
-                    """,
-                    (qty, drink_name, ingredient_name),
-                )
-        recipes_added = conn.total_changes - before
+                recipes_added += conn.execute(
+                    text(
+                        """
+                        INSERT INTO recipes (drink_id, ingredient_id, quantity_needed)
+                        SELECT d.id, i.id, :qty
+                        FROM drinks d, ingredients i
+                        WHERE d.name = :drink_name AND i.name = :ingredient_name
+                        ON CONFLICT (drink_id, ingredient_id) DO NOTHING
+                        """
+                    ),
+                    {
+                        "qty": qty,
+                        "drink_name": drink_name,
+                        "ingredient_name": ingredient_name,
+                    },
+                ).rowcount
 
         conn.commit()
-        print(f"資料庫: {DB_PATH}")
-        print(f"飲品   新增 {drinks_added} 筆（跳過 {len(DRINKS) - drinks_added} 筆已存在）")
-        print(f"食材   新增 {ingredients_added} 筆（跳過 {len(INGREDIENTS) - ingredients_added} 筆已存在）")
-        total_recipe_items = sum(len(v) for v in RECIPES.values())
-        print(f"配方   新增 {recipes_added} 筆（跳過 {total_recipe_items - recipes_added} 筆已存在）")
-    finally:
-        conn.close()
+
+    total_recipe_items = sum(len(v) for v in RECIPES.values())
+    print(f"飲品   新增 {drinks_added} 筆（跳過 {len(DRINKS) - drinks_added} 筆已存在）")
+    print(
+        f"食材   新增 {ingredients_added} 筆"
+        f"（跳過 {len(INGREDIENTS) - ingredients_added} 筆已存在）"
+    )
+    print(
+        f"配方   新增 {recipes_added} 筆"
+        f"（跳過 {total_recipe_items - recipes_added} 筆已存在）"
+    )
 
 
 if __name__ == "__main__":

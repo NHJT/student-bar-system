@@ -1,0 +1,18 @@
+# Railway 部署設定
+# 連線字串、時區等一律由 Railway 的環境變數提供，這裡不放任何機密：
+#   DATABASE_URL  由 Postgres 服務注入（在 Variables 用 ${{Postgres.DATABASE_URL}} 參照）
+#   PORT          由 Railway 注入
+#   APP_TIMEZONE  選填，顯示用時區，預設 Asia/Taipei
+
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+# WebSocket 廣播放在單一程序的記憶體裡，多副本會導致訊息推不到別台，
+# 因此固定單一副本；要水平擴充需改用 Redis pub/sub 之類的外部通道。
+numReplicas = 1

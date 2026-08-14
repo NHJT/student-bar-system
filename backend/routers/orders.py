@@ -1,12 +1,13 @@
-"""訂單 API：下單、狀態流轉、付款標記。"""
+"""訂單 API：下單、修改、狀態流轉、付款標記。"""
 
-import sqlite3
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import text
+from sqlalchemy.engine import Connection
 
 from backend import inventory
-from backend.database import get_db
+from backend.database import get_db, row_to_dict, rows_to_dicts
 from backend.models import (
     OrderCreate,
     OrderEdit,
@@ -40,50 +41,57 @@ _SELECT_ORDER = """
 """
 
 
-def _get_or_404(db: sqlite3.Connection, order_id: int) -> sqlite3.Row:
-    row = db.execute(_SELECT_ORDER + " WHERE o.id = ?", (order_id,)).fetchone()
+def _get_or_404(db: Connection, order_id: int) -> dict:
+    row = db.execute(
+        text(_SELECT_ORDER + " WHERE o.id = :id"), {"id": order_id}
+    ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="找不到這筆訂單")
-    return row
+    return row_to_dict(row)
 
 
 @router.get("")
 def list_orders(
     status: Optional[str] = None,
     table_number: Optional[int] = None,
-    db: sqlite3.Connection = Depends(get_db),
+    db: Connection = Depends(get_db),
 ):
     """訂單列表，可用 ?status=new&table_number=3 過濾。"""
-    conditions, params = [], []
+    conditions, params = [], {}
     if status is not None:
-        conditions.append("o.status = ?")
-        params.append(status)
+        conditions.append("o.status = :status")
+        params["status"] = status
     if table_number is not None:
-        conditions.append("o.table_number = ?")
-        params.append(table_number)
+        conditions.append("o.table_number = :table_number")
+        params["table_number"] = table_number
     sql = _SELECT_ORDER
     if conditions:
         sql += " WHERE " + " AND ".join(conditions)
     sql += " ORDER BY o.placed_at ASC, o.id ASC"
-    return [dict(row) for row in db.execute(sql, params).fetchall()]
+    return rows_to_dicts(db.execute(text(sql), params))
 
 
 @router.get("/{order_id}")
-def get_order(order_id: int, db: sqlite3.Connection = Depends(get_db)):
-    return dict(_get_or_404(db, order_id))
+def get_order(order_id: int, db: Connection = Depends(get_db)):
+    return _get_or_404(db, order_id)
 
 
-@router.post("", status_code=201)
-async def create_order(payload: OrderCreate, db: sqlite3.Connection = Depends(get_db)):
-    if payload.quantity < 1:
-        raise HTTPException(status_code=400, detail="數量至少為 1")
+def _available_drink_or_error(db: Connection, drink_id: int) -> dict:
     drink = db.execute(
-        "SELECT * FROM drinks WHERE id = ?", (payload.drink_id,)
+        text("SELECT * FROM drinks WHERE id = :id"), {"id": drink_id}
     ).fetchone()
     if drink is None:
         raise HTTPException(status_code=404, detail="找不到這杯飲料")
-    if not drink["is_available"]:
-        raise HTTPException(status_code=409, detail=f"「{drink['name']}」目前停售")
+    if not drink.is_available:
+        raise HTTPException(status_code=409, detail=f"「{drink.name}」目前停售")
+    return row_to_dict(drink)
+
+
+@router.post("", status_code=201)
+async def create_order(payload: OrderCreate, db: Connection = Depends(get_db)):
+    if payload.quantity < 1:
+        raise HTTPException(status_code=400, detail="數量至少為 1")
+    _available_drink_or_error(db, payload.drink_id)
 
     # 依配方扣庫存；任何一項不足就整筆拒單
     affected, shortages = inventory.check_and_deduct(
@@ -93,18 +101,22 @@ async def create_order(payload: OrderCreate, db: sqlite3.Connection = Depends(ge
         db.rollback()
         raise HTTPException(status_code=409, detail="庫存不足：" + "；".join(shortages))
 
-    cur = db.execute(
-        "INSERT INTO orders (table_number, drink_id, quantity, special_request) "
-        "VALUES (?, ?, ?, ?)",
-        (
-            payload.table_number,
-            payload.drink_id,
-            payload.quantity,
-            payload.special_request,
+    new_id = db.execute(
+        text(
+            "INSERT INTO orders (table_number, drink_id, quantity, special_request) "
+            "VALUES (:table_number, :drink_id, :quantity, :special_request) "
+            "RETURNING id"
         ),
-    )
+        {
+            "table_number": payload.table_number,
+            "drink_id": payload.drink_id,
+            "quantity": payload.quantity,
+            "special_request": payload.special_request,
+        },
+    ).scalar_one()
     db.commit()
-    order = dict(_get_or_404(db, cur.lastrowid))
+
+    order = _get_or_404(db, new_id)
     await manager.broadcast({"event": "order_created", "order": order})
     await inventory.broadcast_stock_events(db, manager, affected)
     return order
@@ -112,7 +124,7 @@ async def create_order(payload: OrderCreate, db: sqlite3.Connection = Depends(ge
 
 @router.patch("/{order_id}")
 async def edit_order(
-    order_id: int, payload: OrderEdit, db: sqlite3.Connection = Depends(get_db)
+    order_id: int, payload: OrderEdit, db: Connection = Depends(get_db)
 ):
     """服務生修改訂單（品項／數量／特殊需求）。
 
@@ -135,12 +147,7 @@ async def edit_order(
     new_quantity = fields.get("quantity", order["quantity"])
     if new_quantity < 1:
         raise HTTPException(status_code=400, detail="數量至少為 1")
-
-    drink = db.execute("SELECT * FROM drinks WHERE id = ?", (new_drink_id,)).fetchone()
-    if drink is None:
-        raise HTTPException(status_code=404, detail="找不到這杯飲料")
-    if not drink["is_available"]:
-        raise HTTPException(status_code=409, detail=f"「{drink['name']}」目前停售")
+    _available_drink_or_error(db, new_drink_id)
 
     # 品項或數量有變才動庫存：先退回原本用量，再依新內容扣料
     affected: list[int] = []
@@ -157,13 +164,13 @@ async def edit_order(
         affected = list(dict.fromkeys(restored + deducted))
 
     fields["edit_count"] = order["edit_count"] + 1
-    sets = ", ".join(f"{name} = ?" for name in fields)
+    sets = ", ".join(f"{name} = :{name}" for name in fields)
     db.execute(
-        f"UPDATE orders SET {sets} WHERE id = ?", (*fields.values(), order_id)
+        text(f"UPDATE orders SET {sets} WHERE id = :id"), {**fields, "id": order_id}
     )
     db.commit()
 
-    updated = dict(_get_or_404(db, order_id))
+    updated = _get_or_404(db, order_id)
     await manager.broadcast({"event": "order_updated", "order": updated})
     if affected:
         await inventory.broadcast_stock_events(db, manager, affected)
@@ -174,7 +181,7 @@ async def edit_order(
 async def update_status(
     order_id: int,
     payload: OrderStatusUpdate,
-    db: sqlite3.Connection = Depends(get_db),
+    db: Connection = Depends(get_db),
 ):
     """推進訂單狀態，並蓋上對應時間戳。"""
     order = _get_or_404(db, order_id)
@@ -185,11 +192,12 @@ async def update_status(
         raise HTTPException(
             status_code=409, detail=f"不能從 {current} 切換到 {target}"
         )
-    sets = ["status = ?"]
+    sets = ["status = :status"]
     if target in STATUS_TIMESTAMP:
-        sets.append(f"{STATUS_TIMESTAMP[target]} = datetime('now', 'localtime')")
+        sets.append(f"{STATUS_TIMESTAMP[target]} = NOW()")
     db.execute(
-        f"UPDATE orders SET {', '.join(sets)} WHERE id = ?", (target, order_id)
+        text(f"UPDATE orders SET {', '.join(sets)} WHERE id = :id"),
+        {"status": target, "id": order_id},
     )
 
     # 還沒開始製作就取消 → 把配方用量退回庫存
@@ -198,7 +206,7 @@ async def update_status(
         restored = inventory.restore(db, order["drink_id"], order["quantity"])
 
     db.commit()
-    updated = dict(_get_or_404(db, order_id))
+    updated = _get_or_404(db, order_id)
     await manager.broadcast({"event": "order_updated", "order": updated})
     if restored:
         await inventory.broadcast_stock_events(db, manager, restored)
@@ -209,7 +217,7 @@ async def update_status(
 async def update_payment(
     order_id: int,
     payload: OrderPaymentUpdate,
-    db: sqlite3.Connection = Depends(get_db),
+    db: Connection = Depends(get_db),
 ):
     """標記付款狀態（服務生用）。"""
     _get_or_404(db, order_id)
@@ -218,10 +226,10 @@ async def update_payment(
             status_code=400, detail=f"未知付款狀態: {payload.payment_status}"
         )
     db.execute(
-        "UPDATE orders SET payment_status = ? WHERE id = ?",
-        (payload.payment_status, order_id),
+        text("UPDATE orders SET payment_status = :ps WHERE id = :id"),
+        {"ps": payload.payment_status, "id": order_id},
     )
     db.commit()
-    updated = dict(_get_or_404(db, order_id))
+    updated = _get_or_404(db, order_id)
     await manager.broadcast({"event": "order_updated", "order": updated})
     return updated
