@@ -32,7 +32,7 @@
       <ul id="stock-alerts" class="alert-list">
         <li class="placeholder">尚無警示</li>
       </ul>
-      <h2>原料庫存</h2>
+      <h2>原料管理</h2>
       <table class="stock-table">
         <thead>
           <tr><th>原料</th><th>庫存</th><th>單位</th><th>補貨點</th><th></th></tr>
@@ -41,6 +41,13 @@
           <tr><td colspan="5" class="placeholder">尚無資料</td></tr>
         </tbody>
       </table>
+      <form id="ingredient-add-form" class="add-form">
+        <input type="text" id="new-ingredient-name" placeholder="原料名稱" required>
+        <input type="text" id="new-ingredient-unit" placeholder="單位" required>
+        <input type="number" id="new-ingredient-stock" placeholder="庫存" step="0.01" min="0" value="0" required>
+        <input type="number" id="new-ingredient-reorder" placeholder="補貨點" step="0.01" min="0" value="0" required>
+        <button type="submit" class="btn btn-small btn-primary">新增原料</button>
+      </form>
     </section>
   </main>
 
@@ -58,6 +65,50 @@
           <tr><td colspan="9" class="placeholder">尚無資料</td></tr>
         </tbody>
       </table>
+    </section>
+  </main>
+
+  <main class="layout-two-col">
+    <!-- 飲品管理 -->
+    <section class="panel">
+      <h2>飲品管理</h2>
+      <table class="drink-table">
+        <thead>
+          <tr><th>名稱</th><th>分類</th><th>供應</th><th></th></tr>
+        </thead>
+        <tbody id="drink-table-body">
+          <tr><td colspan="4" class="placeholder">尚無資料</td></tr>
+        </tbody>
+      </table>
+      <form id="drink-add-form" class="add-form">
+        <input type="text" id="new-drink-name" placeholder="飲品名稱" required>
+        <input type="text" id="new-drink-category" placeholder="分類（例：調酒）" required>
+        <label class="inline-check">
+          <input type="checkbox" id="new-drink-available" checked> 供應中
+        </label>
+        <button type="submit" class="btn btn-small btn-primary">新增飲品</button>
+      </form>
+    </section>
+
+    <!-- 配方管理 -->
+    <section class="panel">
+      <h2>配方管理</h2>
+      <label class="recipe-picker">選擇飲品
+        <select id="recipe-drink-select"></select>
+      </label>
+      <table class="recipe-table">
+        <thead>
+          <tr><th>原料</th><th>用量</th><th>單位</th><th></th></tr>
+        </thead>
+        <tbody id="recipe-table-body">
+          <tr><td colspan="4" class="placeholder">請先選擇飲品</td></tr>
+        </tbody>
+      </table>
+      <div class="recipe-actions">
+        <button id="recipe-add-row" class="btn btn-small btn-ghost">＋ 新增原料</button>
+        <button id="recipe-save" class="btn btn-small btn-primary">儲存配方</button>
+        <span id="recipe-hint" class="recipe-hint"></span>
+      </div>
     </section>
   </main>
 

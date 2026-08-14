@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from backend.database import get_db
 from backend.models import DrinkCreate, DrinkUpdate
+from backend.ws import manager
 
 router = APIRouter(prefix="/api/drinks", tags=["drinks"])
 
@@ -29,20 +30,24 @@ def get_drink(drink_id: int, db: sqlite3.Connection = Depends(get_db)):
 
 
 @router.post("", status_code=201)
-def create_drink(payload: DrinkCreate, db: sqlite3.Connection = Depends(get_db)):
+async def create_drink(payload: DrinkCreate, db: sqlite3.Connection = Depends(get_db)):
+    if not payload.name.strip():
+        raise HTTPException(status_code=400, detail="飲料名稱不可空白")
     try:
         cur = db.execute(
             "INSERT INTO drinks (name, category, is_available) VALUES (?, ?, ?)",
-            (payload.name, payload.category, int(payload.is_available)),
+            (payload.name.strip(), payload.category.strip(), int(payload.is_available)),
         )
         db.commit()
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail="飲料名稱已存在")
-    return dict(_get_or_404(db, cur.lastrowid))
+    drink = dict(_get_or_404(db, cur.lastrowid))
+    await manager.broadcast({"event": "drink_updated", "drink": drink})
+    return drink
 
 
 @router.patch("/{drink_id}")
-def update_drink(
+async def update_drink(
     drink_id: int, payload: DrinkUpdate, db: sqlite3.Connection = Depends(get_db)
 ):
     _get_or_404(db, drink_id)
@@ -51,6 +56,11 @@ def update_drink(
         raise HTTPException(status_code=400, detail="沒有要更新的欄位")
     if "is_available" in fields:
         fields["is_available"] = int(fields["is_available"])
+    for name in ("name", "category"):
+        if name in fields:
+            if not fields[name].strip():
+                raise HTTPException(status_code=400, detail="名稱與分類不可空白")
+            fields[name] = fields[name].strip()
     sets = ", ".join(f"{name} = ?" for name in fields)
     try:
         db.execute(
@@ -59,13 +69,16 @@ def update_drink(
         db.commit()
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail="飲料名稱已存在")
-    return dict(_get_or_404(db, drink_id))
+    drink = dict(_get_or_404(db, drink_id))
+    await manager.broadcast({"event": "drink_updated", "drink": drink})
+    return drink
 
 
 @router.delete("/{drink_id}", status_code=204)
-def delete_drink(drink_id: int, db: sqlite3.Connection = Depends(get_db)):
+async def delete_drink(drink_id: int, db: sqlite3.Connection = Depends(get_db)):
     _get_or_404(db, drink_id)
     try:
+        # recipes.drink_id 設了 ON DELETE CASCADE，關聯的配方會一併刪除
         db.execute("DELETE FROM drinks WHERE id = ?", (drink_id,))
         db.commit()
     except sqlite3.IntegrityError:
@@ -73,3 +86,4 @@ def delete_drink(drink_id: int, db: sqlite3.Connection = Depends(get_db)):
         raise HTTPException(
             status_code=409, detail="此飲料已有訂單紀錄，無法刪除；可改為停售"
         )
+    await manager.broadcast({"event": "drink_deleted", "drink_id": drink_id})

@@ -8,9 +8,16 @@ document.addEventListener("DOMContentLoaded", () => {
   const orderBody = document.getElementById("order-table-body");
   const alertList = document.getElementById("stock-alerts");
   const stockBody = document.getElementById("stock-table-body");
+  const drinkBody = document.getElementById("drink-table-body");
+  const recipeSelect = document.getElementById("recipe-drink-select");
+  const recipeBody = document.getElementById("recipe-table-body");
+  const recipeHint = document.getElementById("recipe-hint");
 
   let editingIngredient = null; // 正在編輯的原料 id
   let pendingStockRefresh = false; // 編輯期間收到的更新，等編輯結束再套用
+  let editingDrink = null; // 正在編輯的飲品 id
+  let drinks = [];
+  let allIngredients = [];
 
   function kpiTile(label, value, warn = false) {
     return `
@@ -126,18 +133,22 @@ document.addEventListener("DOMContentLoaded", () => {
         <td>${fmtQty(i.current_stock)}</td>
         <td>${escapeHtml(i.unit)}</td>
         <td>${fmtQty(i.reorder_point)}</td>
-        <td><button class="btn btn-small btn-ghost" data-edit-stock="${i.id}">編輯</button></td>
+        <td class="stock-actions">
+          <button class="btn btn-small btn-ghost" data-edit-stock="${i.id}">編輯</button>
+          <button class="btn btn-small btn-danger" data-delete-stock="${i.id}"
+                  data-name="${escapeHtml(i.name)}">刪除</button>
+        </td>
       </tr>`;
   }
 
-  // 編輯模式：庫存與補貨點就地變成輸入框
+  // 編輯模式：四個欄位都可以改
   function stockEditRow(i) {
     return `
       <tr class="row-editing" data-editing="${i.id}">
-        <td>${escapeHtml(i.name)}</td>
+        <td><input type="text" value="${escapeHtml(i.name)}" data-field="name" class="stock-input"></td>
         <td><input type="number" step="0.01" min="0" value="${i.current_stock}"
                    data-field="stock" class="stock-input"></td>
-        <td>${escapeHtml(i.unit)}</td>
+        <td><input type="text" value="${escapeHtml(i.unit)}" data-field="unit" class="stock-input unit-input"></td>
         <td><input type="number" step="0.01" min="0" value="${i.reorder_point}"
                    data-field="reorder" class="stock-input"></td>
         <td class="stock-actions">
@@ -171,11 +182,11 @@ document.addEventListener("DOMContentLoaded", () => {
       : '<tr><td colspan="5" class="placeholder">尚無資料</td></tr>';
   }
 
-  // 庫存列的編輯／儲存／取消（事件委派）
+  // 原料列的編輯／儲存／取消／刪除（事件委派）
   stockBody.addEventListener("click", async (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
-    const { editStock, saveStock, cancelStock } = btn.dataset;
+    const { editStock, saveStock, cancelStock, deleteStock } = btn.dataset;
 
     try {
       if (editStock) {
@@ -184,23 +195,54 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.closest("tr").outerHTML = stockEditRow(ingredient);
       } else if (cancelStock) {
         await closeStockEditor();
+      } else if (deleteStock) {
+        if (!confirm(`確定刪除原料「${btn.dataset.name}」？用到它的配方會一併移除。`)) return;
+        await apiSend("DELETE", `/ingredients/${deleteStock}`);
+        await refreshStock();
+        await loadRecipe(); // 配方可能被連帶刪掉，重讀目前選的飲品
       } else if (saveStock) {
         const tr = btn.closest("tr");
-        const stock = Number(tr.querySelector('[data-field="stock"]').value);
-        const reorder = Number(tr.querySelector('[data-field="reorder"]').value);
+        const value = (f) => tr.querySelector(`[data-field="${f}"]`).value;
+        const stock = Number(value("stock"));
+        const reorder = Number(value("reorder"));
+        if (!value("name").trim() || !value("unit").trim()) {
+          alert("名稱與單位不可空白");
+          return;
+        }
         if (!Number.isFinite(stock) || !Number.isFinite(reorder) || stock < 0 || reorder < 0) {
           alert("庫存與補貨點必須是 0 或正數");
           return;
         }
         await apiSend("PATCH", `/ingredients/${saveStock}`, {
+          name: value("name").trim(),
+          unit: value("unit").trim(),
           current_stock: stock,
           reorder_point: reorder,
         });
         await closeStockEditor();
       }
     } catch (err) {
-      alert(`庫存更新失敗：${err.message}`);
+      alert(`原料更新失敗：${err.message}`);
       await closeStockEditor();
+    }
+  });
+
+  // 新增原料
+  document.getElementById("ingredient-add-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await apiSend("POST", "/ingredients", {
+        name: document.getElementById("new-ingredient-name").value.trim(),
+        unit: document.getElementById("new-ingredient-unit").value.trim(),
+        current_stock: Number(document.getElementById("new-ingredient-stock").value),
+        reorder_point: Number(document.getElementById("new-ingredient-reorder").value),
+      });
+      e.target.reset();
+      document.getElementById("new-ingredient-stock").value = 0;
+      document.getElementById("new-ingredient-reorder").value = 0;
+      await refreshStock();
+    } catch (err) {
+      alert(`新增原料失敗：${err.message}`);
     }
   });
 
@@ -210,20 +252,227 @@ document.addEventListener("DOMContentLoaded", () => {
     await refreshStock();
   }
 
-  function refreshAll() {
+  // ---------------- 飲品管理 ----------------
+  function drinkRow(d) {
+    return `
+      <tr>
+        <td>${escapeHtml(d.name)}</td>
+        <td>${escapeHtml(d.category)}</td>
+        <td>${d.is_available
+          ? '<span class="badge badge-paid">供應中</span>'
+          : '<span class="badge badge-delivered">已停售</span>'}</td>
+        <td class="stock-actions">
+          <button class="btn btn-small btn-ghost" data-edit-drink="${d.id}">編輯</button>
+          <button class="btn btn-small btn-danger" data-delete-drink="${d.id}"
+                  data-name="${escapeHtml(d.name)}">刪除</button>
+        </td>
+      </tr>`;
+  }
+
+  function drinkEditRow(d) {
+    return `
+      <tr class="row-editing" data-editing-drink="${d.id}">
+        <td><input type="text" value="${escapeHtml(d.name)}" data-field="name" class="stock-input"></td>
+        <td><input type="text" value="${escapeHtml(d.category)}" data-field="category" class="stock-input"></td>
+        <td><label class="inline-check">
+          <input type="checkbox" data-field="available" ${d.is_available ? "checked" : ""}> 供應中
+        </label></td>
+        <td class="stock-actions">
+          <button class="btn btn-small btn-primary" data-save-drink="${d.id}">儲存</button>
+          <button class="btn btn-small btn-ghost" data-cancel-drink="1">取消</button>
+        </td>
+      </tr>`;
+  }
+
+  async function refreshDrinks() {
+    if (editingDrink !== null) return; // 編輯中不重繪
+    drinks = await apiGet("/drinks");
+    drinkBody.innerHTML = drinks.length
+      ? drinks.map(drinkRow).join("")
+      : '<tr><td colspan="4" class="placeholder">尚無飲品</td></tr>';
+
+    // 同步配方管理的飲品下拉選單，盡量保留目前選擇
+    const keep = recipeSelect.value;
+    recipeSelect.innerHTML = drinks
+      .map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`)
+      .join("");
+    if (drinks.some((d) => String(d.id) === keep)) recipeSelect.value = keep;
+  }
+
+  drinkBody.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    const { editDrink, saveDrink, cancelDrink, deleteDrink } = btn.dataset;
+
+    try {
+      if (editDrink) {
+        const drink = await apiGet(`/drinks/${editDrink}`);
+        editingDrink = Number(editDrink);
+        btn.closest("tr").outerHTML = drinkEditRow(drink);
+      } else if (cancelDrink) {
+        editingDrink = null;
+        await refreshDrinks();
+      } else if (deleteDrink) {
+        if (!confirm(`確定刪除飲品「${btn.dataset.name}」？它的配方會一併移除。`)) return;
+        await apiSend("DELETE", `/drinks/${deleteDrink}`);
+        await refreshDrinks();
+        await loadRecipe();
+      } else if (saveDrink) {
+        const tr = btn.closest("tr");
+        const name = tr.querySelector('[data-field="name"]').value.trim();
+        const category = tr.querySelector('[data-field="category"]').value.trim();
+        if (!name || !category) {
+          alert("名稱與分類不可空白");
+          return;
+        }
+        await apiSend("PATCH", `/drinks/${saveDrink}`, {
+          name,
+          category,
+          is_available: tr.querySelector('[data-field="available"]').checked,
+        });
+        editingDrink = null;
+        await refreshDrinks();
+      }
+    } catch (err) {
+      alert(`飲品更新失敗：${err.message}`);
+      editingDrink = null;
+      await refreshDrinks();
+    }
+  });
+
+  document.getElementById("drink-add-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await apiSend("POST", "/drinks", {
+        name: document.getElementById("new-drink-name").value.trim(),
+        category: document.getElementById("new-drink-category").value.trim(),
+        is_available: document.getElementById("new-drink-available").checked,
+      });
+      e.target.reset();
+      document.getElementById("new-drink-available").checked = true;
+      await refreshDrinks();
+    } catch (err) {
+      alert(`新增飲品失敗：${err.message}`);
+    }
+  });
+
+  // ---------------- 配方管理 ----------------
+  // 每列一個原料 + 用量；儲存時整組送出（PUT 會覆蓋該飲品的配方）
+  function recipeRow(item, ingredients) {
+    const unit = ingredients.find((i) => i.id === item.ingredient_id)?.unit ?? "";
+    return `
+      <tr data-recipe-row>
+        <td>
+          <select data-field="ingredient" class="stock-input">
+            ${ingredients
+              .map(
+                (i) =>
+                  `<option value="${i.id}" ${i.id === item.ingredient_id ? "selected" : ""}
+                           data-unit="${escapeHtml(i.unit)}">${escapeHtml(i.name)}</option>`
+              )
+              .join("")}
+          </select>
+        </td>
+        <td><input type="number" step="0.01" min="0" value="${item.quantity_needed}"
+                   data-field="qty" class="stock-input qty-input"></td>
+        <td class="recipe-unit">${escapeHtml(unit)}</td>
+        <td><button class="btn btn-small btn-danger" data-remove-row="1">移除</button></td>
+      </tr>`;
+  }
+
+  async function loadRecipe() {
+    const drinkId = recipeSelect.value;
+    if (!drinkId) {
+      recipeBody.innerHTML = '<tr><td colspan="4" class="placeholder">請先選擇飲品</td></tr>';
+      return;
+    }
+    const [items, ingredients] = await Promise.all([
+      apiGet(`/recipes/${drinkId}`),
+      apiGet("/ingredients"),
+    ]);
+    allIngredients = ingredients;
+    if (ingredients.length === 0) {
+      recipeBody.innerHTML = '<tr><td colspan="4" class="placeholder">請先建立原料</td></tr>';
+      return;
+    }
+    recipeBody.innerHTML = items.length
+      ? items.map((it) => recipeRow(it, ingredients)).join("")
+      : '<tr><td colspan="4" class="placeholder">這杯飲品目前不需要原料</td></tr>';
+    recipeHint.textContent = "";
+  }
+
+  recipeSelect.addEventListener("change", loadRecipe);
+
+  document.getElementById("recipe-add-row").addEventListener("click", () => {
+    if (allIngredients.length === 0) return;
+    const placeholder = recipeBody.querySelector(".placeholder");
+    if (placeholder) recipeBody.innerHTML = "";
+    recipeBody.insertAdjacentHTML(
+      "beforeend",
+      recipeRow({ ingredient_id: allIngredients[0].id, quantity_needed: 1 }, allIngredients)
+    );
+  });
+
+  // 換原料時同步顯示單位
+  recipeBody.addEventListener("change", (e) => {
+    const select = e.target.closest('[data-field="ingredient"]');
+    if (!select) return;
+    select.closest("tr").querySelector(".recipe-unit").textContent =
+      select.selectedOptions[0].dataset.unit;
+  });
+
+  recipeBody.addEventListener("click", (e) => {
+    if (!e.target.closest("[data-remove-row]")) return;
+    e.target.closest("tr").remove();
+    if (!recipeBody.querySelector("[data-recipe-row]")) {
+      recipeBody.innerHTML = '<tr><td colspan="4" class="placeholder">這杯飲品目前不需要原料</td></tr>';
+    }
+  });
+
+  document.getElementById("recipe-save").addEventListener("click", async () => {
+    const rows = [...recipeBody.querySelectorAll("[data-recipe-row]")];
+    const items = rows.map((tr) => ({
+      ingredient_id: Number(tr.querySelector('[data-field="ingredient"]').value),
+      quantity_needed: Number(tr.querySelector('[data-field="qty"]').value),
+    }));
+    if (items.some((it) => !(it.quantity_needed > 0))) {
+      alert("每項原料的用量都必須大於 0");
+      return;
+    }
+    const ids = items.map((it) => it.ingredient_id);
+    if (new Set(ids).size !== ids.length) {
+      alert("同一原料只能出現一次");
+      return;
+    }
+    try {
+      await apiSend("PUT", `/recipes/${recipeSelect.value}`, items);
+      await loadRecipe();
+      recipeHint.textContent = "已儲存 ✓";
+    } catch (err) {
+      alert(`儲存配方失敗：${err.message}`);
+    }
+  });
+
+  async function refreshAll() {
     refreshStats();
     refreshOrders();
     refreshStock();
+    await refreshDrinks();
+    await loadRecipe();
   }
 
   // 即時更新：訂單事件刷新統計與訂單區；庫存事件刷新庫存區；
-  // 重連成功時全部補抓
+  // 飲品／配方事件刷新管理區；重連成功時全部補抓
   connectWebSocket((msg) => {
     if (msg.event?.startsWith("order_")) {
       refreshStats();
       refreshOrders();
     }
     if (msg.event === "stock_alert" || msg.event?.startsWith("ingredient_")) refreshStock();
+    if (msg.event?.startsWith("drink_")) refreshDrinks();
+    if (msg.event === "recipe_updated" && Number(msg.drink_id) === Number(recipeSelect.value)) {
+      loadRecipe();
+    }
   }, refreshAll);
 
   // 超時狀態會隨時間變化而沒有任何事件，定期重算

@@ -39,19 +39,30 @@ def get_ingredient(ingredient_id: int, db: sqlite3.Connection = Depends(get_db))
 
 
 @router.post("", status_code=201)
-def create_ingredient(
+async def create_ingredient(
     payload: IngredientCreate, db: sqlite3.Connection = Depends(get_db)
 ):
+    if not payload.name.strip() or not payload.unit.strip():
+        raise HTTPException(status_code=400, detail="名稱與單位不可空白")
+    if payload.current_stock < 0 or payload.reorder_point < 0:
+        raise HTTPException(status_code=400, detail="庫存與補貨點不可為負數")
     try:
         cur = db.execute(
             "INSERT INTO ingredients (name, unit, current_stock, reorder_point) "
             "VALUES (?, ?, ?, ?)",
-            (payload.name, payload.unit, payload.current_stock, payload.reorder_point),
+            (
+                payload.name.strip(),
+                payload.unit.strip(),
+                payload.current_stock,
+                payload.reorder_point,
+            ),
         )
         db.commit()
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail="原料名稱已存在")
-    return dict(_get_or_404(db, cur.lastrowid))
+    ingredient = dict(_get_or_404(db, cur.lastrowid))
+    await inventory.broadcast_stock_events(db, manager, [ingredient["id"]])
+    return ingredient
 
 
 @router.patch("/{ingredient_id}")
@@ -67,6 +78,11 @@ async def update_ingredient(
     for name in ("current_stock", "reorder_point"):
         if fields.get(name) is not None and fields[name] < 0:
             raise HTTPException(status_code=400, detail="庫存與補貨點不可為負數")
+    for name in ("name", "unit"):
+        if name in fields:
+            if not fields[name].strip():
+                raise HTTPException(status_code=400, detail="名稱與單位不可空白")
+            fields[name] = fields[name].strip()
     sets = ", ".join(f"{name} = ?" for name in fields)
     try:
         db.execute(
@@ -76,8 +92,7 @@ async def update_ingredient(
         db.commit()
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail="原料名稱已存在")
-    if "current_stock" in fields or "reorder_point" in fields:
-        await inventory.broadcast_stock_events(db, manager, [ingredient_id])
+    await inventory.broadcast_stock_events(db, manager, [ingredient_id])
     return dict(_get_or_404(db, ingredient_id))
 
 
@@ -105,8 +120,11 @@ async def adjust_stock(
 
 
 @router.delete("/{ingredient_id}", status_code=204)
-def delete_ingredient(ingredient_id: int, db: sqlite3.Connection = Depends(get_db)):
+async def delete_ingredient(
+    ingredient_id: int, db: sqlite3.Connection = Depends(get_db)
+):
     _get_or_404(db, ingredient_id)
     # recipes 設了 ON DELETE CASCADE，刪原料會一併移除相關配方項目
     db.execute("DELETE FROM ingredients WHERE id = ?", (ingredient_id,))
     db.commit()
+    await manager.broadcast({"event": "ingredient_deleted", "ingredient_id": ingredient_id})

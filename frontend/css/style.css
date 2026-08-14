@@ -76,7 +76,9 @@ form input, form select {
 
 .btn-small { padding: .25rem .6rem; font-size: .8rem; background: var(--primary); color: #fff; }
 .btn-ghost { background: transparent; color: var(--primary); border: 1px solid var(--border); }
-.btn-danger { background: var(--danger); color: #fff; }
+/* 刪除鍵用外框而非紅底：紅色填滿保留給 Andon 超時與庫存警示 */
+.btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--border); }
+.btn-danger:hover { border-color: var(--danger); background: #fdecec; }
 
 /* ---------- 服務生：就地修改訂單 ---------- */
 /* 這個表單不在 <form> 內，所以欄位樣式要自己寫一份 */
@@ -162,6 +164,34 @@ form input, form select {
   font-size: .9rem; color: var(--text); background: var(--panel);
 }
 .stock-actions { display: flex; gap: .35rem; }
+.unit-input { max-width: 4rem; }
+.qty-input { max-width: 6rem; }
+
+/* ---------- 管理區塊：新增表單 ---------- */
+.add-form {
+  display: flex; flex-wrap: wrap; gap: .5rem; align-items: center;
+  margin-top: .9rem; padding-top: .9rem; border-top: 1px solid var(--border);
+}
+.add-form input[type="text"], .add-form input[type="number"] {
+  flex: 1 1 7rem; min-width: 5rem; width: auto; margin: 0;
+  padding: .4rem .5rem; border: 1px solid var(--border); border-radius: 8px;
+  font-size: .9rem;
+}
+.inline-check {
+  display: flex; align-items: center; gap: .3rem;
+  font-size: .85rem; color: var(--muted); margin: 0; white-space: nowrap;
+}
+.inline-check input { width: auto; margin: 0; }
+
+/* ---------- 配方管理 ---------- */
+.recipe-picker { display: block; font-size: .85rem; color: var(--muted); margin-bottom: .75rem; }
+.recipe-picker select {
+  display: block; width: 100%; margin-top: .25rem; padding: .45rem;
+  border: 1px solid var(--border); border-radius: 8px; font-size: .95rem;
+}
+.recipe-unit { color: var(--muted); font-size: .85rem; }
+.recipe-actions { display: flex; gap: .5rem; align-items: center; margin-top: .9rem; }
+.recipe-hint { font-size: .85rem; color: var(--ok); }
 
 /* Andon: 超時訂單 */
 .order-queue li.overdue {

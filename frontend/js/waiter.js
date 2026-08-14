@@ -169,9 +169,13 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   loadDrinks();
-  // 即時更新：收到訂單事件就刷新；重連成功時補抓斷線期間的變化
+  // 即時更新：訂單事件刷新訂單列表；經理端改動酒單時同步更新下拉選單；
+  // 重連成功時補抓斷線期間的變化
   connectWebSocket(
-    (msg) => { if (msg.event?.startsWith("order_")) refreshOrders(); },
-    () => refreshOrders()
+    (msg) => {
+      if (msg.event?.startsWith("order_")) refreshOrders();
+      if (msg.event?.startsWith("drink_")) loadDrinks();
+    },
+    () => { loadDrinks(); refreshOrders(); }
   );
 });

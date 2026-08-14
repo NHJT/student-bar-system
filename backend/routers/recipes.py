@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from backend.database import get_db
 from backend.models import RecipeItemIn
+from backend.ws import manager
 
 router = APIRouter(prefix="/api/recipes", tags=["recipes"])
 
@@ -32,7 +33,7 @@ def get_recipe(drink_id: int, db: sqlite3.Connection = Depends(get_db)):
 
 
 @router.put("/{drink_id}")
-def set_recipe(
+async def set_recipe(
     drink_id: int,
     items: list[RecipeItemIn],
     db: sqlite3.Connection = Depends(get_db),
@@ -43,6 +44,8 @@ def set_recipe(
     if len(set(ingredient_ids)) != len(ingredient_ids):
         raise HTTPException(status_code=400, detail="同一原料重複出現")
     for item in items:
+        if item.quantity_needed <= 0:
+            raise HTTPException(status_code=400, detail="用量必須大於 0")
         if (
             db.execute(
                 "SELECT 1 FROM ingredients WHERE id = ?", (item.ingredient_id,)
@@ -58,4 +61,5 @@ def set_recipe(
         [(drink_id, item.ingredient_id, item.quantity_needed) for item in items],
     )
     db.commit()
+    await manager.broadcast({"event": "recipe_updated", "drink_id": drink_id})
     return get_recipe(drink_id, db)

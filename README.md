@@ -25,7 +25,8 @@ frontend/
   index.html       # 角色選擇首頁
   waiter.html      # 服務生：點餐、桌號、標記付款、修改／取消未製作的訂單
   bar.html         # 吧台：訂單佇列、狀態切換、Andon 超時（變紅＋跳窗＋警示音）
-  manager.html     # 經理：今日 KPI、熱門品項、超時訂單、訂單總覽、庫存警示與編輯
+  manager.html     # 經理：今日 KPI、熱門品項、超時訂單、訂單總覽、
+                   #       庫存警示，以及飲品／原料／配方管理
   css/style.css
   js/common.js     # 共用 API / WebSocket 工具
   js/waiter.js  js/bar.js  js/manager.js
@@ -55,6 +56,16 @@ uvicorn backend.main:app --reload
 
 訂單狀態流：`new → preparing → completed → delivered`（可 `cancelled`）；付款：`unpaid → paid`。
 訂單只有在 `new` 階段可以修改或取消，取消時食材會退回庫存。
+
+## 主檔管理（經理儀表板）
+
+飲品、原料、配方都可以在經理儀表板直接新增／編輯／刪除，改動會透過 WebSocket
+即時同步到其他頁面（例如新增飲品後，服務生的點餐選單會自動更新）。
+
+刪除的連帶影響：
+
+- 刪除飲品或原料時，`recipes` 設了 `ON DELETE CASCADE`，關聯的配方會一併移除。
+- **已有訂單紀錄的飲品無法刪除**（回 409），以免破壞既有訂單；請改用「停售」下架。
 
 ## Andon 超時門檻
 
