@@ -151,6 +151,18 @@ form input, form select {
 
 .row-low td { background: #fdf6ec; }
 
+/* 超時訂單整列標紅（與吧台 Andon 看板的 .overdue 同一個紅） */
+.row-overdue td { background: #fdecec; }
+
+/* 庫存就地編輯 */
+.row-editing td { background: #f7f9ff; }
+.stock-input {
+  width: 100%; max-width: 7rem; padding: .3rem .4rem;
+  border: 1px solid var(--border); border-radius: 6px;
+  font-size: .9rem; color: var(--text); background: var(--panel);
+}
+.stock-actions { display: flex; gap: .35rem; }
+
 /* Andon: 超時訂單 */
 .order-queue li.overdue {
   border-color: var(--danger);

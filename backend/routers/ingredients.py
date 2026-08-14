@@ -64,6 +64,9 @@ async def update_ingredient(
     fields = payload.model_dump(exclude_unset=True)
     if not fields:
         raise HTTPException(status_code=400, detail="沒有要更新的欄位")
+    for name in ("current_stock", "reorder_point"):
+        if fields.get(name) is not None and fields[name] < 0:
+            raise HTTPException(status_code=400, detail="庫存與補貨點不可為負數")
     sets = ", ".join(f"{name} = ?" for name in fields)
     try:
         db.execute(

@@ -18,6 +18,29 @@ const ANDON_THRESHOLDS = {
   completed: 3, // 完成後未送達
 };
 
+// Andon 計時基準：各狀態從「進入該狀態」的時間開始算
+const ANDON_REF_FIELD = {
+  new: "placed_at",
+  preparing: "started_at",
+  completed: "completed_at",
+};
+
+// 算出在目前狀態停留幾分鐘、是否超時；不列入計時的狀態（已送達／已取消）回 null
+function andonState(status, refTimestamp) {
+  const limit = ANDON_THRESHOLDS[status];
+  if (limit == null || !refTimestamp) return null;
+  const ref = new Date(refTimestamp.replace(" ", "T")).getTime();
+  const minutes = Math.max(0, (Date.now() - ref) / 60000);
+  return { minutes, limit, overdue: minutes >= limit };
+}
+
+// 同上，但直接吃一筆訂單物件
+function orderAndonState(order) {
+  const field = ANDON_REF_FIELD[order.status];
+  if (!field) return null;
+  return andonState(order.status, order[field] ?? order.placed_at);
+}
+
 async function apiGet(path) {
   const res = await fetch(`${API_BASE}${path}`);
   if (!res.ok) throw new Error(`GET ${path} 失敗: ${res.status}`);

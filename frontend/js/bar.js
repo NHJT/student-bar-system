@@ -6,9 +6,6 @@
 const NEXT_STATUS = { new: "preparing", preparing: "completed", completed: "delivered" };
 const NEXT_LABEL = { new: "開始製作 ▶", preparing: "完成 ✓", completed: "已送出 🚚" };
 
-// Andon 計時基準：各欄從「進入該狀態」的時間開始算
-const ANDON_REF_FIELD = { new: "placed_at", preparing: "started_at", completed: "completed_at" };
-
 // 超時時的說明文字
 const ANDON_REASON = {
   new: (m) => `下單後超過 ${m} 分鐘仍未開始製作`,
@@ -114,10 +111,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const fresh = [];
     document.querySelectorAll(".order-queue li[data-id]").forEach((li) => {
       const status = li.dataset.status;
-      const limit = ANDON_THRESHOLDS[status];
-      const ref = new Date(li.dataset.ref.replace(" ", "T")).getTime();
-      const minutes = Math.max(0, (Date.now() - ref) / 60000);
-      const overdue = minutes >= limit;
+      const { minutes, limit, overdue } = andonState(status, li.dataset.ref);
 
       li.querySelector(".elapsed").textContent = `已等 ${Math.floor(minutes)} / ${limit} 分 ・ `;
       li.classList.toggle("overdue", overdue);

@@ -9,6 +9,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const alertList = document.getElementById("stock-alerts");
   const stockBody = document.getElementById("stock-table-body");
 
+  let editingIngredient = null; // 正在編輯的原料 id
+  let pendingStockRefresh = false; // 編輯期間收到的更新，等編輯結束再套用
+
   function kpiTile(label, value, warn = false) {
     return `
       <div class="stat-tile ${warn ? "stat-warn" : ""}">
@@ -84,9 +87,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     orderBody.innerHTML = [...orders]
       .reverse() // 新的在上面
-      .map(
-        (o) => `
-        <tr>
+      .map((o) => {
+        // 超時的訂單整列標紅（門檻與吧台 Andon 看板相同）
+        const andon = orderAndonState(o);
+        return `
+        <tr class="${andon?.overdue ? "row-overdue" : ""}"
+            data-status="${o.status}" data-ref="${o[ANDON_REF_FIELD[o.status]] ?? o.placed_at}">
           <td>${o.id}</td>
           <td>桌 ${o.table_number}</td>
           <td>${escapeHtml(o.drink_name)}${
@@ -99,12 +105,54 @@ document.addEventListener("DOMContentLoaded", () => {
           <td>${formatTime(o.placed_at)}</td>
           <td>${formatTime(o.completed_at) || "—"}</td>
           <td>${formatTime(o.delivered_at) || "—"}</td>
-        </tr>`
-      )
+        </tr>`;
+      })
       .join("");
   }
 
+  // 訂單會隨時間走到超時，但那不會產生任何事件，所以定期重算整列標紅
+  function updateOverdueRows() {
+    orderBody.querySelectorAll("tr[data-status]").forEach((tr) => {
+      const state = andonState(tr.dataset.status, tr.dataset.ref);
+      tr.classList.toggle("row-overdue", Boolean(state?.overdue));
+    });
+  }
+
+  // 一般顯示模式的原料列
+  function stockRow(i) {
+    return `
+      <tr class="${i.current_stock < i.reorder_point ? "row-low" : ""}">
+        <td>${escapeHtml(i.name)}</td>
+        <td>${fmtQty(i.current_stock)}</td>
+        <td>${escapeHtml(i.unit)}</td>
+        <td>${fmtQty(i.reorder_point)}</td>
+        <td><button class="btn btn-small btn-ghost" data-edit-stock="${i.id}">編輯</button></td>
+      </tr>`;
+  }
+
+  // 編輯模式：庫存與補貨點就地變成輸入框
+  function stockEditRow(i) {
+    return `
+      <tr class="row-editing" data-editing="${i.id}">
+        <td>${escapeHtml(i.name)}</td>
+        <td><input type="number" step="0.01" min="0" value="${i.current_stock}"
+                   data-field="stock" class="stock-input"></td>
+        <td>${escapeHtml(i.unit)}</td>
+        <td><input type="number" step="0.01" min="0" value="${i.reorder_point}"
+                   data-field="reorder" class="stock-input"></td>
+        <td class="stock-actions">
+          <button class="btn btn-small btn-primary" data-save-stock="${i.id}">儲存</button>
+          <button class="btn btn-small btn-ghost" data-cancel-stock="1">取消</button>
+        </td>
+      </tr>`;
+  }
+
   async function refreshStock() {
+    // 編輯中不重繪，避免輸入到一半被蓋掉
+    if (editingIngredient !== null) {
+      pendingStockRefresh = true;
+      return;
+    }
     const ingredients = await apiGet("/ingredients");
 
     const low = ingredients.filter((i) => i.current_stock < i.reorder_point);
@@ -119,18 +167,47 @@ document.addEventListener("DOMContentLoaded", () => {
       : '<li class="placeholder">庫存充足 ✓</li>';
 
     stockBody.innerHTML = ingredients.length
-      ? ingredients
-          .map(
-            (i) => `
-            <tr class="${i.current_stock < i.reorder_point ? "row-low" : ""}">
-              <td>${escapeHtml(i.name)}</td>
-              <td>${fmtQty(i.current_stock)}</td>
-              <td>${escapeHtml(i.unit)}</td>
-              <td>${fmtQty(i.reorder_point)}</td>
-            </tr>`
-          )
-          .join("")
-      : '<tr><td colspan="4" class="placeholder">尚無資料</td></tr>';
+      ? ingredients.map(stockRow).join("")
+      : '<tr><td colspan="5" class="placeholder">尚無資料</td></tr>';
+  }
+
+  // 庫存列的編輯／儲存／取消（事件委派）
+  stockBody.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    const { editStock, saveStock, cancelStock } = btn.dataset;
+
+    try {
+      if (editStock) {
+        const ingredient = await apiGet(`/ingredients/${editStock}`);
+        editingIngredient = Number(editStock);
+        btn.closest("tr").outerHTML = stockEditRow(ingredient);
+      } else if (cancelStock) {
+        await closeStockEditor();
+      } else if (saveStock) {
+        const tr = btn.closest("tr");
+        const stock = Number(tr.querySelector('[data-field="stock"]').value);
+        const reorder = Number(tr.querySelector('[data-field="reorder"]').value);
+        if (!Number.isFinite(stock) || !Number.isFinite(reorder) || stock < 0 || reorder < 0) {
+          alert("庫存與補貨點必須是 0 或正數");
+          return;
+        }
+        await apiSend("PATCH", `/ingredients/${saveStock}`, {
+          current_stock: stock,
+          reorder_point: reorder,
+        });
+        await closeStockEditor();
+      }
+    } catch (err) {
+      alert(`庫存更新失敗：${err.message}`);
+      await closeStockEditor();
+    }
+  });
+
+  async function closeStockEditor() {
+    editingIngredient = null;
+    pendingStockRefresh = false;
+    await refreshStock();
   }
 
   function refreshAll() {
@@ -149,6 +226,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (msg.event === "stock_alert" || msg.event?.startsWith("ingredient_")) refreshStock();
   }, refreshAll);
 
-  // 「超時訂單」會隨時間增加而沒有任何事件，每 30 秒重算一次
-  setInterval(refreshStats, 30000);
+  // 超時狀態會隨時間變化而沒有任何事件，定期重算
+  setInterval(refreshStats, 30000); // 超時清單與 KPI（需要後端計算）
+  setInterval(updateOverdueRows, 10000); // 訂單表格整列標紅（純前端計算）
 });
