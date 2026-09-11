@@ -18,7 +18,12 @@ import sys
 def main() -> int:
     parser = argparse.ArgumentParser(description="初始化資料表")
     parser.add_argument(
-        "--seed", action="store_true", help="順便寫入初始測試資料（飲品／原料／配方）"
+        "--seed",
+        action="store_true",
+        help="順便寫入菜單資料（會先清除既有的飲品／原料／配方）",
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="搭配 --seed：連同既有訂單一起清除"
     )
     args = parser.parse_args()
 
@@ -41,12 +46,15 @@ def main() -> int:
     print("✓ 資料表已建立（已存在的會跳過）")
 
     if args.seed:
-        from backend.seed_data import seed
+        from backend.seed_data import SeedAborted, seed
 
         try:
-            seed()
+            seed(force=args.force)
+        except SeedAborted as exc:
+            print(f"✗ {exc}", file=sys.stderr)
+            return 1
         except Exception as exc:
-            print(f"✗ 寫入初始資料失敗: {exc}", file=sys.stderr)
+            print(f"✗ 寫入菜單資料失敗: {exc}", file=sys.stderr)
             return 1
 
     return 0

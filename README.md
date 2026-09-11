@@ -16,7 +16,7 @@ backend/
   database.py      # SQLAlchemy 連線（讀 DATABASE_URL）與資料表初始化
   schema.sql       # 四張資料表結構（PostgreSQL）
   models.py        # Pydantic 模型
-  seed_data.py     # 初始測試資料（飲品/食材/配方）
+  seed_data.py     # 酒吧真實菜單（飲品/原料/配方），會先清空再寫入
   inventory.py     # 配方庫存連動（下單扣料/取消退料/補貨警示）
   ws.py            # WebSocket 連線管理
   routers/
@@ -55,7 +55,7 @@ frontend/
 pip install -r requirements.txt
 createdb studentbar
 export DATABASE_URL=postgresql://postgres@127.0.0.1:5432/studentbar
-python init_db.py --seed        # 建立資料表並寫入初始測試資料
+python init_db.py --seed        # 建立資料表並寫入菜單資料
 uvicorn backend.main:app --reload
 ```
 
@@ -70,10 +70,33 @@ uvicorn backend.main:app --reload
 4. **第一次部署後手動初始化資料表**（資料表不會在啟動時自動建立）：
 
    ```bash
-   railway run python init_db.py --seed   # 不需要示範資料就拿掉 --seed
+   railway run python init_db.py --seed   # 只要建表不寫菜單就拿掉 --seed
    ```
 
-   也可以在 Railway 的 Shell 直接執行同一行指令。重複執行是安全的。
+   也可以在 Railway 的 Shell 直接執行同一行指令。
+
+## 菜單資料
+
+`backend/seed_data.py` 存的是酒吧的真實菜單：26 款調酒（依基酒分成 GIN／
+WHISKEY／VODKA／RUM／TEQUILA BASE、OTHERS、SIGNATURE）、38 項原料、116 筆配方。
+
+```bash
+python -m backend.seed_data           # 重置菜單
+python -m backend.seed_data --force   # 連同既有訂單一起清除
+```
+
+⚠️ 這是**重置**而非補資料：執行時會先清空 `recipes`、`drinks`、`ingredients`
+再寫入。因為 `orders` 參照 `drinks`，資料庫裡若已有訂單，腳本會中止並要求加
+`--force`，避免不小心刪掉營業資料。
+
+每杯用量是合理的起始值（基酒 0.05 瓶、利口酒 0.02 瓶、萊姆汁 0.05 瓶、
+果汁 0.1 瓶、汽水 1 罐、香草 0.2 束、冰塊 0.1 公斤、苦精 0.005 瓶），
+實際份量請在經理後台的配方管理逐項調整。
+
+售價寫在 `MENU` 裡但**尚未進資料庫**（`drinks` 表沒有 `price` 欄位），
+之後要加價格／營收功能時可直接取用。
+
+店內桌號為 1–13，設定在 `frontend/js/common.js` 的 `TABLE_COUNT`。
 
 部署注意事項：
 

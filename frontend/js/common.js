@@ -11,6 +11,9 @@ const STATUS_LABELS = {
   cancelled: "已取消",
 };
 
+// 店內桌數：桌號 1 ~ TABLE_COUNT，全部都是一般桌
+const TABLE_COUNT = 13;
+
 // 三段式 Andon 超時門檻（分鐘）——與後端 stats.py 的 ANDON_THRESHOLDS 一致
 const ANDON_THRESHOLDS = {
   new: 5, // 未開始製作

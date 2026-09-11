@@ -12,8 +12,8 @@ document.addEventListener("DOMContentLoaded", () => {
   let editingId = null; // 正在編輯中的訂單 id
   let pendingRefresh = false; // 編輯期間收到的更新，等編輯結束再套用
 
-  // 桌號 1–20 先寫死，之後可改成設定
-  for (let i = 1; i <= 20; i++) {
+  // 店內共 13 張桌，全部一般桌
+  for (let i = 1; i <= TABLE_COUNT; i++) {
     tableSelect.add(new Option(`桌 ${i}`, i));
   }
 
