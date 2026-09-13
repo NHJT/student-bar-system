@@ -76,10 +76,35 @@ body {
 .placeholder { color: var(--muted); list-style: none; }
 
 /* ---------- 表單 ---------- */
-form label { display: block; margin-bottom: .75rem; font-size: .9rem; }
-form input, form select {
+/* .field 讓欄位不管在不在 <form> 裡都長得一樣 */
+form label, .field { display: block; margin-bottom: .75rem; font-size: .9rem; }
+.field-label { display: block; }
+form input, form select,
+.field input, .field select {
   display: block; width: 100%; margin-top: .25rem; padding: .5rem;
   border: 1px solid var(--border); border-radius: 8px; font-size: 1rem;
+  color: var(--text); background: var(--panel);
+  /* select 與 input 的固有高度不同，明確指定才會完全一致（也兼顧觸控面積） */
+  height: 2.75rem; box-sizing: border-box;
+}
+
+/* 數量加減器：手機也好按的大按鈕，最小值 1。
+   寬度收斂，兩顆按鈕不要離太遠，單手拇指構得到 */
+.stepper {
+  display: grid; grid-template-columns: 3.25rem 4.5rem 3.25rem;
+  align-items: stretch; gap: .5rem; margin-top: .25rem;
+}
+.stepper-btn {
+  height: 3rem; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--panel); color: var(--primary);
+  font-size: 1.5rem; line-height: 1; cursor: pointer;
+}
+.stepper-btn:hover:not(:disabled) { border-color: var(--primary); background: #f2f6ff; }
+.stepper-btn:disabled { color: var(--border); cursor: not-allowed; }
+.stepper-value {
+  display: flex; align-items: center; justify-content: center;
+  height: 3rem; border: 1px solid var(--border); border-radius: 8px;
+  font-size: 1.25rem; font-weight: 600;
 }
 .btn {
   padding: .6rem 1.2rem; border: none; border-radius: 8px;
@@ -102,16 +127,31 @@ form input, form select {
 }
 .cart-row { display: flex; align-items: center; gap: .5rem; }
 .cart-name { flex: 1; font-size: .95rem; }
-.cart-qty {
-  width: 4.5rem; padding: .3rem .4rem; margin: 0;
-  border: 1px solid var(--border); border-radius: 6px; font-size: .9rem;
+/* 車內也用加減器，整個點餐流程都不必打字 */
+.cart-stepper { display: flex; align-items: center; gap: .35rem; }
+.cart-stepper .stepper-btn {
+  width: 2.25rem; height: 2.25rem; font-size: 1.15rem; padding: 0;
+}
+.cart-stepper .cart-qty-value {
+  min-width: 1.75rem; text-align: center; font-weight: 600; font-size: .95rem;
 }
 .cart-note {
   width: 100%; margin-top: .4rem; padding: .3rem .4rem;
   border: 1px solid var(--border); border-radius: 6px; font-size: .85rem;
 }
-.cart-actions { display: flex; gap: .5rem; align-items: center; margin-top: .75rem; }
-#add-item-form { padding-bottom: .5rem; border-bottom: 1px solid var(--border); }
+/* 送出／清空靠右下，並與上方的「加入訂單」拉開距離 */
+.cart-actions {
+  display: flex; gap: .5rem; align-items: center; justify-content: flex-end;
+  margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border);
+}
+#add-item-form { padding-bottom: 1rem; margin-bottom: .5rem; border-bottom: 1px solid var(--border); }
+
+/* 「加入訂單」與「送出訂單」同尺寸，靠顏色與距離區分，降低誤觸 */
+.btn-action { min-width: 9rem; height: 2.75rem; }
+.btn:disabled {
+  background: var(--border); color: var(--muted);
+  border-color: var(--border); cursor: not-allowed;
+}
 
 /* ---------- 訂單品項列（服務生／吧台） ---------- */
 .order-item-line {

@@ -6,7 +6,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const tableSelect = document.getElementById("table-number");
   const drinkSelect = document.getElementById("drink-select");
   const addForm = document.getElementById("add-item-form");
-  const quantityInput = document.getElementById("quantity");
+  const qtyValue = document.getElementById("quantity-value");
+  const qtyMinus = document.getElementById("qty-minus");
+  const qtyPlus = document.getElementById("qty-plus");
   const specialInput = document.getElementById("special-request");
   const cartList = document.getElementById("cart-list");
   const cartCount = document.getElementById("cart-count");
@@ -16,6 +18,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let availableDrinks = []; // 供修改表單重建下拉選單
   let cart = []; // 本次訂單的品項：{drink_id, drink_name, quantity, special_request}
+  let itemQty = 1; // 加減器目前的數量，最小 1
   let editingId = null; // 正在編輯中的訂單 id
   let pendingRefresh = false; // 編輯期間收到的更新，等編輯結束再套用
 
@@ -45,6 +48,15 @@ document.addEventListener("DOMContentLoaded", () => {
       .join("");
   }
 
+  // ---------------- 數量加減器 ----------------
+  function setQty(n) {
+    itemQty = Math.max(1, n); // 不能減到 0 以下
+    qtyValue.textContent = itemQty;
+    qtyMinus.disabled = itemQty <= 1;
+  }
+  qtyMinus.addEventListener("click", () => setQty(itemQty - 1));
+  qtyPlus.addEventListener("click", () => setQty(itemQty + 1));
+
   // ---------------- 本次訂單（購物車） ----------------
   function renderCart() {
     const cups = cart.reduce((n, it) => n + it.quantity, 0);
@@ -59,8 +71,13 @@ document.addEventListener("DOMContentLoaded", () => {
             <li class="cart-item">
               <div class="cart-row">
                 <span class="cart-name">${escapeHtml(it.drink_name)}</span>
-                <input type="number" class="cart-qty" min="1" value="${it.quantity}"
-                       data-qty="${idx}" title="數量">
+                <span class="cart-stepper">
+                  <button class="stepper-btn" data-step="${idx}" data-delta="-1"
+                          aria-label="減少數量" ${it.quantity <= 1 ? "disabled" : ""}>−</button>
+                  <span class="cart-qty-value">${it.quantity}</span>
+                  <button class="stepper-btn" data-step="${idx}" data-delta="1"
+                          aria-label="增加數量">＋</button>
+                </span>
                 <button class="btn btn-small btn-danger" data-remove="${idx}">移除</button>
               </div>
               <input type="text" class="cart-note" placeholder="特殊需求"
@@ -75,8 +92,7 @@ document.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
     const drink = availableDrinks.find((d) => String(d.id) === drinkSelect.value);
     if (!drink) return;
-    const quantity = Number(quantityInput.value);
-    if (!(quantity >= 1)) return;
+    const quantity = itemQty;
     const note = specialInput.value.trim() || null;
 
     // 同一款飲料且需求相同就直接加數量，不另開一列
@@ -92,25 +108,27 @@ document.addEventListener("DOMContentLoaded", () => {
         special_request: note,
       });
 
-    quantityInput.value = 1;
+    setQty(1);
     specialInput.value = "";
     renderCart();
   });
 
-  // 車內品項的修改與移除
+  // 車內品項的加減、移除
   cartList.addEventListener("click", (e) => {
-    const idx = e.target.dataset.remove;
-    if (idx === undefined) return;
-    cart.splice(Number(idx), 1);
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    const { remove, step, delta } = btn.dataset;
+    if (remove !== undefined) {
+      cart.splice(Number(remove), 1);
+    } else if (step !== undefined) {
+      const item = cart[Number(step)];
+      item.quantity = Math.max(1, item.quantity + Number(delta)); // 最少留 1
+    } else return;
     renderCart();
   });
   cartList.addEventListener("change", (e) => {
-    const { qty, note } = e.target.dataset;
-    if (qty !== undefined) {
-      const n = Number(e.target.value);
-      if (n >= 1) cart[Number(qty)].quantity = n;
-      renderCart();
-    } else if (note !== undefined) {
+    const { note } = e.target.dataset;
+    if (note !== undefined) {
       cart[Number(note)].special_request = e.target.value.trim() || null;
     }
   });
@@ -298,6 +316,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   loadDrinks();
+  setQty(1);
   renderCart();
   // 即時更新：訂單事件刷新訂單列表；經理端改動酒單時同步更新下拉選單；
   // 重連成功時補抓斷線期間的變化
