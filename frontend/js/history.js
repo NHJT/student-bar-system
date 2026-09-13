@@ -59,12 +59,16 @@ document.addEventListener("DOMContentLoaded", () => {
           : '<span class="placeholder">當天沒有售出紀錄</span>'}
 
         <div class="history-actions">
-          <a class="btn btn-small btn-primary"
-             href="/api/history/${encodeURIComponent(day.business_date)}/orders.csv"
-             download>下載 CSV</a>
-          <span class="history-hint">
-            當日 ${day.total_orders} 筆訂單的原始紀錄，含各階段時間戳與付款、修改次數
-          </span>
+          ${day.raw_orders > 0
+            ? `<a class="btn btn-small btn-primary"
+                  href="/api/history/${encodeURIComponent(day.business_date)}/orders.csv"
+                  download>下載 CSV</a>
+               <span class="history-hint">
+                 ${day.raw_orders} 筆原始訂單，含各階段時間戳與付款、修改次數
+               </span>`
+            : `<span class="history-hint">
+                 這一天結算時還沒有保留原始訂單，因此無法下載 CSV
+               </span>`}
         </div>
       </div>`;
   }

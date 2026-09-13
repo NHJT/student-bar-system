@@ -203,10 +203,13 @@ def settle_today() -> dict | None:
 
 
 def backfill_missing() -> list[str]:
-    """補結算：把「有訂單但沒有歷史紀錄」的過去日期補上。
+    """補結算過去日期，兩種情況都補：
 
-    服務在 23:59 剛好重啟或部署時排程會錯過，啟動時補一次可避免整天的
-    數據消失。只往回補 HISTORY_LIMIT 天，再舊的反正也會被裁掉。
+    1. 有訂單但沒有彙總紀錄：服務在 23:59 前後重啟或部署時錯過排程。
+    2. 有彙總但沒有原始訂單紀錄：那天是加入 historical_orders 之前結算的。
+       原始訂單一直都留在 orders 裡，重跑一次就能補齊。
+
+    只往回補 HISTORY_LIMIT 天，再舊的反正也會被裁掉。
     """
     filled = []
     with engine.connect() as conn:
@@ -217,7 +220,11 @@ def backfill_missing() -> list[str]:
                 FROM orders
                 WHERE placed_at::date < NOW()::date
                   AND placed_at::date > NOW()::date - :limit
-                  AND placed_at::date NOT IN (SELECT business_date FROM daily_summary)
+                  AND (
+                    placed_at::date NOT IN (SELECT business_date FROM daily_summary)
+                    OR placed_at::date NOT IN (
+                        SELECT DISTINCT business_date FROM historical_orders)
+                  )
                 ORDER BY business_date
                 """
             ),

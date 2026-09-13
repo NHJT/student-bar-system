@@ -15,11 +15,15 @@ from backend.ws import manager
 
 router = APIRouter(prefix="/api/history", tags=["history"])
 
+# raw_orders：該日留存的原始訂單筆數。舊版結算的日子沒有原始紀錄，
+# 前端據此決定要不要顯示「下載 CSV」，避免點了得到壞掉的檔案。
 _SELECT = """
-    SELECT business_date, total_orders, drinks_sold, avg_prep_minutes,
-           max_wait_minutes, overdue_orders, edit_rate, unpaid_orders,
-           top_drinks, created_at
-    FROM daily_summary
+    SELECT d.business_date, d.total_orders, d.drinks_sold, d.avg_prep_minutes,
+           d.max_wait_minutes, d.overdue_orders, d.edit_rate, d.unpaid_orders,
+           d.top_drinks, d.created_at,
+           (SELECT COUNT(*) FROM historical_orders h
+            WHERE h.business_date = d.business_date)::int AS raw_orders
+    FROM daily_summary d
 """
 
 
@@ -29,7 +33,7 @@ def list_history(db: Connection = Depends(get_db)):
     return {
         "limit": summary.HISTORY_LIMIT,
         "days": rows_to_dicts(
-            db.execute(text(_SELECT + " ORDER BY business_date DESC"))
+            db.execute(text(_SELECT + " ORDER BY d.business_date DESC"))
         ),
     }
 
@@ -37,7 +41,7 @@ def list_history(db: Connection = Depends(get_db)):
 @router.get("/{business_date}")
 def get_history(business_date: str, db: Connection = Depends(get_db)):
     row = db.execute(
-        text(_SELECT + " WHERE business_date = :d"), {"d": business_date}
+        text(_SELECT + " WHERE d.business_date = :d"), {"d": business_date}
     ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="這一天沒有歷史紀錄")
