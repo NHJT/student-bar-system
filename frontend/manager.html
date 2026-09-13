@@ -23,15 +23,17 @@
     <section class="panel">
       <h2>訂單總覽</h2>
       <div id="order-stats" class="stats-row"></div>
-      <table class="order-table">
-        <thead>
-          <tr><th>#</th><th>桌號</th><th>飲料</th><th>數量</th><th>狀態</th><th>付款</th>
-              <th>下單時間</th><th>完成時間</th><th>送達時間</th></tr>
-        </thead>
-        <tbody id="order-table-body">
-          <tr><td colspan="9" class="placeholder">尚無資料</td></tr>
-        </tbody>
-      </table>
+      <div class="table-scroll">
+        <table class="order-table">
+          <thead>
+            <tr><th>#</th><th>桌號</th><th>飲料</th><th>數量</th><th>狀態</th><th>付款</th>
+                <th>下單時間</th><th>完成時間</th><th>送達時間</th></tr>
+          </thead>
+          <tbody id="order-table-body">
+            <tr><td colspan="9" class="placeholder">尚無資料</td></tr>
+          </tbody>
+        </table>
+      </div>
     </section>
   </main>
 
@@ -53,14 +55,16 @@
         <li class="placeholder">尚無警示</li>
       </ul>
       <h2>原料管理</h2>
-      <table class="stock-table">
-        <thead>
-          <tr><th>原料</th><th>庫存</th><th>單位</th><th>補貨點</th><th></th></tr>
-        </thead>
-        <tbody id="stock-table-body">
-          <tr><td colspan="5" class="placeholder">尚無資料</td></tr>
-        </tbody>
-      </table>
+      <div class="table-scroll">
+        <table class="stock-table">
+          <thead>
+            <tr><th>原料</th><th>庫存</th><th>單位</th><th>補貨點</th><th></th></tr>
+          </thead>
+          <tbody id="stock-table-body">
+            <tr><td colspan="5" class="placeholder">尚無資料</td></tr>
+          </tbody>
+        </table>
+      </div>
       <form id="ingredient-add-form" class="add-form">
         <input type="text" id="new-ingredient-name" placeholder="原料名稱" required>
         <input type="text" id="new-ingredient-unit" placeholder="單位" required>
@@ -75,14 +79,16 @@
     <!-- 飲品管理 -->
     <section class="panel">
       <h2>飲品管理</h2>
-      <table class="drink-table">
-        <thead>
-          <tr><th>名稱</th><th>分類</th><th>供應</th><th></th></tr>
-        </thead>
-        <tbody id="drink-table-body">
-          <tr><td colspan="4" class="placeholder">尚無資料</td></tr>
-        </tbody>
-      </table>
+      <div class="table-scroll">
+        <table class="drink-table">
+          <thead>
+            <tr><th>名稱</th><th>分類</th><th>供應</th><th></th></tr>
+          </thead>
+          <tbody id="drink-table-body">
+            <tr><td colspan="4" class="placeholder">尚無資料</td></tr>
+          </tbody>
+        </table>
+      </div>
       <form id="drink-add-form" class="add-form">
         <input type="text" id="new-drink-name" placeholder="飲品名稱" required>
         <input type="text" id="new-drink-category" placeholder="分類（例：調酒）" required>
@@ -99,14 +105,16 @@
       <label class="recipe-picker">選擇飲品
         <select id="recipe-drink-select"></select>
       </label>
-      <table class="recipe-table">
-        <thead>
-          <tr><th>原料</th><th>用量</th><th>單位</th><th></th></tr>
-        </thead>
-        <tbody id="recipe-table-body">
-          <tr><td colspan="4" class="placeholder">請先選擇飲品</td></tr>
-        </tbody>
-      </table>
+      <div class="table-scroll">
+        <table class="recipe-table">
+          <thead>
+            <tr><th>原料</th><th>用量</th><th>單位</th><th></th></tr>
+          </thead>
+          <tbody id="recipe-table-body">
+            <tr><td colspan="4" class="placeholder">請先選擇飲品</td></tr>
+          </tbody>
+        </table>
+      </div>
       <div class="recipe-actions">
         <button id="recipe-add-row" class="btn btn-small btn-ghost">＋ 新增原料</button>
         <button id="recipe-save" class="btn btn-small btn-primary">儲存配方</button>

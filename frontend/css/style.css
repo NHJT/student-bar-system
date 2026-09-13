@@ -62,7 +62,15 @@ body {
 .panel {
   background: var(--panel); border: 1px solid var(--border);
   border-radius: 12px; padding: 1rem;
+  /* grid 項目預設不能縮到比內容窄，寬表格會把整個版面撐開 */
+  min-width: 0;
 }
+
+/* 窄螢幕時讓表格在自己的框裡橫向捲動，整頁版面不被撐寬。
+   min-width 是各表格擠到不能再擠的寬度，低於它就開始捲動。 */
+.table-scroll { overflow-x: auto; }
+.table-scroll table { min-width: 22rem; }
+.table-scroll .order-table { min-width: 42rem; }
 .panel h2 { font-size: 1rem; margin-bottom: .75rem; }
 
 .placeholder { color: var(--muted); list-style: none; }
