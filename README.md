@@ -18,6 +18,8 @@ backend/
   models.py        # Pydantic 模型
   seed_data.py     # 酒吧真實菜單（飲品/原料/配方），會先清空再寫入
   inventory.py     # 配方庫存連動（下單扣料/取消退料/補貨警示）
+  summary.py       # 每日結算：把當日數字寫進 daily_summary
+  scheduler.py     # 每天 23:59 觸發結算的排程
   ws.py            # WebSocket 連線管理
   routers/
     drinks.py      # 飲料 API
@@ -25,12 +27,14 @@ backend/
     orders.py      # 訂單 API
     recipes.py     # 配方 API
     stats.py       # 經理儀表板統計 API
+    history.py     # 歷史數據 API
 frontend/
   index.html       # 角色選擇首頁
   waiter.html      # 服務生：點餐、桌號、標記付款、修改／取消未製作的訂單
   bar.html         # 吧台：訂單佇列、狀態切換、Andon 超時（變紅＋跳窗＋警示音）
   manager.html     # 經理：今日 KPI、熱門品項、超時訂單、訂單總覽、
                    #       庫存警示，以及飲品／原料／配方管理
+  history.html     # 歷史數據：每個營業日一列，點開看當日明細
   css/style.css
   js/common.js     # 共用 API / WebSocket 工具
   js/waiter.js  js/bar.js  js/manager.js
@@ -122,6 +126,33 @@ python -m backend.seed_data --force   # 連同既有訂單一起清除
 
 訂單狀態流：`new → preparing → completed → delivered`（可 `cancelled`）；付款：`unpaid → paid`。
 訂單只有在 `new` 階段可以修改或取消，取消時食材會退回庫存。
+
+## 每日結算與歷史數據
+
+每天 **23:59**（`APP_TIMEZONE` 當地時間）排程會自動結算當日營運數字，寫進
+`daily_summary`。當天沒有任何訂單就跳過不存，不會留下空白紀錄。
+
+儲存的欄位：日期、總訂單數、總售出杯數、平均製作時間、最長等待時間（下單到
+送達）、超時訂單數、訂單修改率、未付款數、各飲品售出數量。最多保留 **90 個
+營業日**，寫入新紀錄後會把超出的最舊紀錄刪掉。
+
+結算不會刪除任何訂單，原始紀錄完整保留。儀表板的「訂單總覽」與 KPI 只統計
+**今天**的訂單（`GET /api/orders?today=true`），所以跨過午夜後畫面自然歸零。
+吧台與服務生頁面不加這個條件，跨夜還沒做完的訂單才不會從佇列消失。
+
+相關 API：
+
+```
+GET  /api/history          所有歷史營業日（新的在前）
+GET  /api/history/{date}   單一營業日
+POST /api/history/settle   立刻結算今天（不必等 23:59，重複執行會覆蓋同一天）
+```
+
+經理儀表板右上角的「查看歷史數據」進入 `/history.html`，點任一營業日可展開
+當日明細與熱門飲品前三名。
+
+服務若在 23:59 前後重啟就會錯過排程，因此**啟動時會自動補結算**「有訂單但沒有
+歷史紀錄」的過去日期，避免整天的數據消失。
 
 ## 主檔管理（經理儀表板）
 

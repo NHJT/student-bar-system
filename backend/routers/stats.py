@@ -53,9 +53,10 @@ def get_stats(db: Connection = Depends(get_db)):
     cancelled_today = one(
         f"SELECT COUNT(*) FROM orders WHERE {_TODAY} AND status = 'cancelled'"
     )
+    # 未付款只看今天，與儀表板「每日結算後歸零」一致
     unpaid = one(
-        "SELECT COUNT(*) FROM orders "
-        "WHERE payment_status = 'unpaid' AND status != 'cancelled'"
+        f"SELECT COUNT(*) FROM orders "
+        f"WHERE {_TODAY} AND payment_status = 'unpaid' AND status != 'cancelled'"
     )
 
     # 輸入錯誤率量測：今日被改過的訂單數與總修改次數

@@ -46,3 +46,18 @@ CREATE TABLE IF NOT EXISTS orders (
 
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status);
 CREATE INDEX IF NOT EXISTS idx_orders_placed_at ON orders (placed_at);
+
+-- 每日結算：每天 23:59 把當日營運數字存成一筆歷史紀錄
+-- 以 business_date 為主鍵，重跑同一天會覆蓋而不是新增
+CREATE TABLE IF NOT EXISTS daily_summary (
+    business_date    DATE             PRIMARY KEY,
+    total_orders     INTEGER          NOT NULL,
+    drinks_sold      INTEGER          NOT NULL,
+    avg_prep_minutes DOUBLE PRECISION,           -- 當天沒有完成的訂單時為 NULL
+    max_wait_minutes DOUBLE PRECISION,           -- 下單到送達的最長時間
+    overdue_orders   INTEGER          NOT NULL,  -- 任一站超過 Andon 門檻的訂單數
+    edit_rate        DOUBLE PRECISION NOT NULL,  -- 被修改過的訂單占比（%）
+    unpaid_orders    INTEGER          NOT NULL,
+    top_drinks       JSONB            NOT NULL,  -- [{"name": ..., "qty": n}, ...] 由多到少
+    created_at       TIMESTAMPTZ      NOT NULL DEFAULT NOW()
+);

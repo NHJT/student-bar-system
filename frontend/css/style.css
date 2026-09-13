@@ -39,6 +39,8 @@ body {
   padding: .75rem 1.25rem; background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
+.topbar-right { display: flex; align-items: center; gap: .75rem; }
+.topbar .btn { text-decoration: none; }
 .ws-status { font-size: .85rem; color: var(--muted); }
 .ws-status.connected { color: var(--ok); }
 .ws-status.disconnected { color: var(--danger); }
@@ -155,6 +157,29 @@ form input, form select {
 .stat-card.stat-warn strong { color: var(--danger); }
 
 .row-low td { background: #fdf6ec; }
+
+/* ---------- 歷史數據 ---------- */
+.history-count { color: var(--muted); font-weight: 400; font-size: .8rem; }
+.history-list { list-style: none; }
+.history-item {
+  border: 1px solid var(--border); border-radius: 8px;
+  margin-bottom: .5rem; overflow: hidden;
+}
+.history-item.open { border-color: var(--primary); }
+.history-row {
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+  padding: .75rem 1rem; cursor: pointer; font-size: .9rem;
+}
+.history-row:hover { background: #f7f9ff; }
+.history-date { font-variant-numeric: tabular-nums; }
+.history-prep { color: var(--muted); }
+.history-toggle { margin-left: auto; color: var(--primary); font-size: .85rem; }
+.history-detail { padding: 0 1rem 1rem; border-top: 1px solid var(--border); }
+.history-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: .75rem; margin: 1rem 0;
+}
+.history-subtitle { font-size: .9rem; margin-bottom: .6rem; }
 
 /* 超時訂單整列標紅（與吧台 Andon 看板的 .overdue 同一個紅） */
 .row-overdue td { background: #fdecec; }

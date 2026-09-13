@@ -122,8 +122,16 @@ def _migrate(conn: Connection) -> None:
 
 def init_db() -> None:
     """依 schema.sql 建立資料表（已存在則跳過），並補上缺少的欄位。"""
+    # schema.sql 會整份送出，裡面可能出現 % 或 : 這類字元（例如註解文字）。
+    # 只要經過參數替換就會出錯，所以直接用 DBAPI cursor 執行。
+    raw = engine.raw_connection()
+    try:
+        with raw.cursor() as cur:
+            cur.execute(SCHEMA_PATH.read_text(encoding="utf-8"))
+        raw.commit()
+    finally:
+        raw.close()
+
     with engine.connect() as conn:
-        # exec_driver_sql：直接交給 psycopg2，避免 schema 內容被當成 bind 參數解析
-        conn.exec_driver_sql(SCHEMA_PATH.read_text(encoding="utf-8"))
         _migrate(conn)
         conn.commit()

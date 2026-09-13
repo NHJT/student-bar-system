@@ -54,9 +54,14 @@ def _get_or_404(db: Connection, order_id: int) -> dict:
 def list_orders(
     status: Optional[str] = None,
     table_number: Optional[int] = None,
+    today: bool = False,
     db: Connection = Depends(get_db),
 ):
-    """訂單列表，可用 ?status=new&table_number=3 過濾。"""
+    """訂單列表，可用 ?status=new&table_number=3&today=true 過濾。
+
+    today=true 只回傳今天下單的訂單，經理儀表板用它做到「每日結算後顯示歸零」；
+    吧台與服務生不加這個條件，跨過午夜還沒做完的訂單才不會從佇列消失。
+    """
     conditions, params = [], {}
     if status is not None:
         conditions.append("o.status = :status")
@@ -64,6 +69,8 @@ def list_orders(
     if table_number is not None:
         conditions.append("o.table_number = :table_number")
         params["table_number"] = table_number
+    if today:
+        conditions.append("o.placed_at::date = NOW()::date")
     sql = _SELECT_ORDER
     if conditions:
         sql += " WHERE " + " AND ".join(conditions)

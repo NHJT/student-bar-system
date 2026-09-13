@@ -70,7 +70,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function refreshOrders() {
-    const orders = await apiGet("/orders");
+    // 只看今天：每日 23:59 結算後，儀表板的訂單總覽就會歸零重新開始
+    const orders = await apiGet("/orders?today=true");
 
     // 各狀態統計 + 未付款數
     const counts = {};
@@ -476,6 +477,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (msg.event?.startsWith("drink_")) refreshDrinks();
     if (msg.event === "recipe_updated" && Number(msg.drink_id) === Number(recipeSelect.value)) {
       loadRecipe();
+    }
+    // 每日結算完成，儀表板的今日數字要重新抓
+    if (msg.event === "day_settled") {
+      refreshStats();
+      refreshOrders();
     }
   }, refreshAll);
 

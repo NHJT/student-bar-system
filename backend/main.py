@@ -15,8 +15,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
+from backend import scheduler, summary
 from backend.database import engine
-from backend.routers import drinks, ingredients, orders, recipes, stats
+from backend.routers import drinks, history, ingredients, orders, recipes, stats
 from backend.ws import manager
 
 logger = logging.getLogger("uvicorn.error")
@@ -37,6 +38,7 @@ class NoCacheStaticFiles(StaticFiles):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """啟動時只檢查連線與資料表是否就緒，不自動建表（交給 init_db.py）。"""
+    ready = False
     try:
         with engine.connect() as conn:
             ready = conn.execute(text("SELECT to_regclass('public.orders')")).scalar()
@@ -46,7 +48,18 @@ async def lifespan(app: FastAPI):
             logger.warning("資料庫連線正常，但找不到資料表，請執行: python init_db.py --seed")
     except Exception as exc:
         logger.error("無法連線資料庫: %s", exc)
-    yield
+
+    if ready:
+        # 服務在 23:59 前後重啟會錯過排程，啟動時補結算遺漏的日期
+        try:
+            summary.backfill_missing()
+        except Exception:
+            logger.exception("補結算失敗")
+        scheduler.start()
+    try:
+        yield
+    finally:
+        scheduler.shutdown()
 
 
 app = FastAPI(title="學生酒吧點餐與庫存管理系統", lifespan=lifespan)
@@ -56,6 +69,7 @@ app.include_router(ingredients.router)
 app.include_router(orders.router)
 app.include_router(recipes.router)
 app.include_router(stats.router)
+app.include_router(history.router)
 
 
 @app.get("/api/health")
