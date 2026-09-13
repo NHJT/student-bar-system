@@ -264,9 +264,13 @@ th { color: var(--muted); font-weight: 600; }
 .stat-tile.stat-warn .stat-value { color: var(--danger); }
 
 /* ---------- 儀表板：熱門品項長條 ---------- */
-.bar-list { display: flex; flex-direction: column; gap: .5rem; margin-bottom: 1.25rem; }
+/* 每一列各自是一個 grid，名稱欄若用 auto 會跟著自己那列的文字長度伸縮，
+   導致長條起點參差不齊。固定寬度才能讓所有長條對齊在同一條垂直線上。 */
+/* 12em 剛好容得下最長的英文品名（Long Island Iced Tea）；
+   更長的名稱以省略號收尾，滑過去會顯示完整名稱 */
+.bar-list { --bar-name-width: 12em; display: flex; flex-direction: column; gap: .5rem; margin-bottom: 1.25rem; }
 .bar-row {
-  display: grid; grid-template-columns: minmax(7em, auto) 1fr 2.5em;
+  display: grid; grid-template-columns: var(--bar-name-width) 1fr 2.5em;
   align-items: center; gap: .6rem; font-size: .9rem;
 }
 .bar-name { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
