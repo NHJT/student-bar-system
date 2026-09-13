@@ -46,10 +46,13 @@ body {
 .layout-one-col, .layout-two-col, .layout-three-col {
   display: grid; gap: 1rem; padding: 1rem;
 }
-.layout-one-col { grid-template-columns: 1fr; padding-top: 0; }
+.layout-one-col { grid-template-columns: 1fr; }
 .layout-two-col { grid-template-columns: 1fr 1fr; }
 .layout-three-col { grid-template-columns: 1fr 1fr 1fr; }
-.layout-two-col + .layout-one-col, .kpi-row + .layout-two-col { padding-top: 0; }
+/* 相鄰的區塊之間只留一份間距，不受區塊排列順序影響。
+   選擇器要用 class 才壓得過上面 .layout-* 的 padding */
+.kpi-row + main,
+:is(.layout-one-col, .layout-two-col, .layout-three-col) + main { padding-top: 0; }
 @media (max-width: 900px) {
   .layout-two-col, .layout-three-col { grid-template-columns: 1fr; }
 }
