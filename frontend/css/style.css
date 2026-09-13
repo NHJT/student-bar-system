@@ -93,7 +93,65 @@ form input, form select {
 .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--border); }
 .btn-danger:hover { border-color: var(--danger); background: #fdecec; }
 
+/* ---------- 服務生：本次訂單（購物車） ---------- */
+.cart-count { color: var(--muted); font-weight: 400; font-size: .8rem; }
+.cart-list { list-style: none; }
+.cart-item {
+  padding: .6rem .75rem; margin-bottom: .5rem;
+  border: 1px solid var(--border); border-radius: 8px; background: #f7f9ff;
+}
+.cart-row { display: flex; align-items: center; gap: .5rem; }
+.cart-name { flex: 1; font-size: .95rem; }
+.cart-qty {
+  width: 4.5rem; padding: .3rem .4rem; margin: 0;
+  border: 1px solid var(--border); border-radius: 6px; font-size: .9rem;
+}
+.cart-note {
+  width: 100%; margin-top: .4rem; padding: .3rem .4rem;
+  border: 1px solid var(--border); border-radius: 6px; font-size: .85rem;
+}
+.cart-actions { display: flex; gap: .5rem; align-items: center; margin-top: .75rem; }
+#add-item-form { padding-bottom: .5rem; border-bottom: 1px solid var(--border); }
+
+/* ---------- 訂單品項列（服務生／吧台） ---------- */
+.order-item-line {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  font-size: .88rem; margin-top: .35rem; padding-left: .25rem;
+  color: var(--text);
+}
+.order-summary { color: var(--muted); font-size: .85rem; }
+
+/* 吧台卡片內的品項 */
+.card-items { margin-top: .4rem; font-size: .88rem; }
+.card-item-brief { padding: .15rem 0; }
+.card-count { color: var(--muted); font-size: .85rem; }
+.bar-items { margin-top: .5rem; border-top: 1px solid var(--border); padding-top: .5rem; }
+.bar-item {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  padding: .35rem 0; font-size: .88rem;
+}
+.bar-item + .bar-item { border-top: 1px dashed var(--border); }
+.bar-item-name { flex: 1; }
+.bar-item.item-done .bar-item-name { color: var(--muted); }
+.card-head { font-size: .95rem; }
+.order-queue li .card-action {
+  display: flex; align-items: center; gap: .5rem; justify-content: flex-end;
+  margin-top: .6rem;
+}
+.order-queue li .card-action .elapsed { margin-right: auto; }
+
 /* ---------- 服務生：就地修改訂單 ---------- */
+.edit-item {
+  display: flex; gap: .4rem; align-items: center; margin-top: .5rem; flex-wrap: wrap;
+}
+.edit-item select { flex: 1 1 9rem; min-width: 7rem; }
+.edit-item input[type="number"] { width: 4.5rem; }
+.edit-item input[type="text"] { flex: 1 1 7rem; min-width: 6rem; }
+.edit-item select, .edit-item input {
+  margin: 0; padding: .35rem .45rem; border: 1px solid var(--border);
+  border-radius: 6px; font-size: .85rem;
+}
+
 /* 這個表單不在 <form> 內，所以欄位樣式要自己寫一份 */
 .order-list li.editing { border-color: var(--primary); background: #f7f9ff; }
 .edit-form label {

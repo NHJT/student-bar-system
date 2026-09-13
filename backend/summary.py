@@ -25,7 +25,8 @@ _DAY_NUMBERS = text(
     """
     SELECT
         COUNT(*)::int AS total_orders,
-        COALESCE(SUM(quantity) FILTER (WHERE status <> 'cancelled'), 0)::int
+        COALESCE(SUM((SELECT COALESCE(SUM(i.quantity), 0) FROM order_items i
+                      WHERE i.group_id = g.id AND i.status <> 'cancelled')), 0)::int
             AS drinks_sold,
         ROUND(
             (AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60)
@@ -51,16 +52,18 @@ _DAY_NUMBERS = text(
         COUNT(*) FILTER (
             WHERE payment_status = 'unpaid' AND status <> 'cancelled'
         )::int AS unpaid_orders
-    FROM orders
+    FROM order_groups g
     WHERE placed_at::date = :business_date
     """
 )
 
 _DAY_TOP_DRINKS = text(
     """
-    SELECT d.name, SUM(o.quantity)::int AS qty
-    FROM orders o JOIN drinks d ON d.id = o.drink_id
-    WHERE o.placed_at::date = :business_date AND o.status <> 'cancelled'
+    SELECT d.name, SUM(i.quantity)::int AS qty
+    FROM order_items i
+    JOIN order_groups g ON g.id = i.group_id
+    JOIN drinks d ON d.id = i.drink_id
+    WHERE g.placed_at::date = :business_date AND i.status <> 'cancelled'
     GROUP BY d.name
     ORDER BY qty DESC, d.name
     """
@@ -94,16 +97,24 @@ _UPSERT = text(
 _SNAPSHOT_ORDERS = text(
     """
     INSERT INTO historical_orders (
-        business_date, order_id, table_number, drink_name, quantity, status,
+        business_date, order_id, table_number, items, item_count, quantity, status,
         placed_at, started_at, completed_at, delivered_at,
         payment_status, payment_completed_at, is_modified, modify_count
     )
-    SELECT o.placed_at::date, o.id, o.table_number, d.name, o.quantity, o.status,
-           o.placed_at, o.started_at, o.completed_at, o.delivered_at,
-           o.payment_status, o.payment_completed_at,
-           o.edit_count > 0, o.edit_count
-    FROM orders o JOIN drinks d ON d.id = o.drink_id
-    WHERE o.placed_at::date = :business_date
+    SELECT g.placed_at::date, g.id, g.table_number,
+           COALESCE((SELECT string_agg(d.name || ' x' || i.quantity, ' | '
+                                       ORDER BY i.id)
+                     FROM order_items i JOIN drinks d ON d.id = i.drink_id
+                     WHERE i.group_id = g.id), ''),
+           (SELECT COUNT(*) FROM order_items i WHERE i.group_id = g.id),
+           (SELECT COALESCE(SUM(i.quantity), 0) FROM order_items i
+            WHERE i.group_id = g.id),
+           g.status,
+           g.placed_at, g.started_at, g.completed_at, g.delivered_at,
+           g.payment_status, g.payment_completed_at,
+           g.edit_count > 0, g.edit_count
+    FROM order_groups g
+    WHERE g.placed_at::date = :business_date
     """
 )
 
@@ -217,7 +228,7 @@ def backfill_missing() -> list[str]:
             text(
                 """
                 SELECT DISTINCT placed_at::date AS business_date
-                FROM orders
+                FROM order_groups
                 WHERE placed_at::date < NOW()::date
                   AND placed_at::date > NOW()::date - :limit
                   AND (

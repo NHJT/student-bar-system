@@ -64,7 +64,7 @@ document.addEventListener("DOMContentLoaded", () => {
                   href="/api/history/${encodeURIComponent(day.business_date)}/orders.csv"
                   download>下載 CSV</a>
                <span class="history-hint">
-                 ${day.raw_orders} 筆原始訂單，含各階段時間戳與付款、修改次數
+                 ${day.raw_orders} 筆原始訂單，每筆含品項清單、各階段時間戳與付款、修改次數
                </span>`
             : `<span class="history-hint">
                  這一天結算時還沒有保留原始訂單，因此無法下載 CSV

@@ -103,10 +103,12 @@ document.addEventListener("DOMContentLoaded", () => {
             data-status="${o.status}" data-ref="${o[ANDON_REF_FIELD[o.status]] ?? o.placed_at}">
           <td>${o.id}</td>
           <td>桌 ${o.table_number}</td>
-          <td>${escapeHtml(o.drink_name)}${
-            o.special_request ? `<br><small>📝 ${escapeHtml(o.special_request)}</small>` : ""
-          }</td>
-          <td>${o.quantity}</td>
+          <td>${o.items
+            .map((i) => `${escapeHtml(i.drink_name)} × ${i.quantity}${
+              i.special_request ? `<br><small>📝 ${escapeHtml(i.special_request)}</small>` : ""
+            }`)
+            .join("<br>")}</td>
+          <td>${o.total_quantity}</td>
           <td>${statusBadge(o.status)}</td>
           <td><span class="badge ${o.payment_status === "paid" ? "badge-paid" : "badge-unpaid"}">
             ${o.payment_status === "paid" ? "已付款" : "未付款"}</span></td>

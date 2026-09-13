@@ -25,13 +25,12 @@ CREATE TABLE IF NOT EXISTS recipes (
     PRIMARY KEY (drink_id, ingredient_id)
 );
 
--- 訂單
-CREATE TABLE IF NOT EXISTS orders (
+-- 訂單（一張訂單 = 一個 order_group，可包含多個品項）
+-- 狀態與時間戳都記在訂單層級；各品項可以單獨切換狀態，
+-- 訂單狀態一律取「最落後的品項」，全部做完才算完成。
+CREATE TABLE IF NOT EXISTS order_groups (
     id              SERIAL      PRIMARY KEY,
     table_number    INTEGER     NOT NULL,
-    drink_id        INTEGER     NOT NULL REFERENCES drinks (id),
-    quantity        INTEGER     NOT NULL DEFAULT 1,
-    special_request TEXT,
     status          TEXT        NOT NULL DEFAULT 'new'
                     CHECK (status IN ('new', 'preparing', 'completed', 'delivered', 'cancelled')),
     payment_status  TEXT        NOT NULL DEFAULT 'unpaid'
@@ -40,13 +39,25 @@ CREATE TABLE IF NOT EXISTS orders (
     edit_count      INTEGER     NOT NULL DEFAULT 0,  -- 服務生修改次數（輸入錯誤率量測）
     -- 時間一律以 TIMESTAMPTZ 存 UTC；顯示時再轉成 APP_TIMEZONE
     placed_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    started_at      TIMESTAMPTZ,  -- 吧台開始製作
-    completed_at    TIMESTAMPTZ,  -- 製作完成
-    delivered_at    TIMESTAMPTZ   -- 送達桌邊
+    started_at      TIMESTAMPTZ,  -- 所有品項都開始製作
+    completed_at    TIMESTAMPTZ,  -- 所有品項都製作完成
+    delivered_at    TIMESTAMPTZ   -- 整張訂單送達桌邊
 );
 
-CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status);
-CREATE INDEX IF NOT EXISTS idx_orders_placed_at ON orders (placed_at);
+-- 訂單品項
+CREATE TABLE IF NOT EXISTS order_items (
+    id              SERIAL  PRIMARY KEY,
+    group_id        INTEGER NOT NULL REFERENCES order_groups (id) ON DELETE CASCADE,
+    drink_id        INTEGER NOT NULL REFERENCES drinks (id),
+    quantity        INTEGER NOT NULL DEFAULT 1,
+    special_request TEXT,
+    status          TEXT    NOT NULL DEFAULT 'new'
+                    CHECK (status IN ('new', 'preparing', 'completed', 'delivered', 'cancelled'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_groups_status ON order_groups (status);
+CREATE INDEX IF NOT EXISTS idx_groups_placed_at ON order_groups (placed_at);
+CREATE INDEX IF NOT EXISTS idx_items_group ON order_items (group_id);
 
 -- 每日結算：每天 23:59 把當日營運數字存成一筆歷史紀錄
 -- 以 business_date 為主鍵，重跑同一天會覆蓋而不是新增
@@ -68,10 +79,11 @@ CREATE TABLE IF NOT EXISTS daily_summary (
 -- 與 daily_summary 同步保留 90 個營業日。
 CREATE TABLE IF NOT EXISTS historical_orders (
     business_date        DATE        NOT NULL,
-    order_id             INTEGER     NOT NULL,
+    order_id             INTEGER     NOT NULL,  -- order_groups.id
     table_number         INTEGER     NOT NULL,
-    drink_name           TEXT        NOT NULL,
-    quantity             INTEGER     NOT NULL,
+    items                TEXT        NOT NULL,  -- 例: "Negroni x2 | Gin Tonic x1"
+    item_count           INTEGER     NOT NULL,  -- 品項數
+    quantity             INTEGER     NOT NULL,  -- 總杯數
     status               TEXT        NOT NULL,  -- 需要它才能區分已取消與未完成的訂單
     placed_at            TIMESTAMPTZ NOT NULL,
     started_at           TIMESTAMPTZ,

@@ -74,30 +74,50 @@ class RecipeItemIn(BaseModel):
 
 
 # ---------- orders ----------
-class OrderCreate(BaseModel):
-    table_number: int
+class OrderItemIn(BaseModel):
+    """訂單裡的一個品項。"""
+
     drink_id: int
     quantity: int = 1
     special_request: Optional[str] = None
 
 
-class OrderEdit(BaseModel):
-    """服務生修改訂單（僅限尚未進入製作的訂單），只帶要改的欄位。"""
+class OrderCreate(BaseModel):
+    """一張訂單：一個桌號 + 一到多個品項。"""
 
-    drink_id: Optional[int] = None
-    quantity: Optional[int] = None
+    table_number: int
+    items: list[OrderItemIn]
+
+
+class OrderEdit(BaseModel):
+    """服務生修改訂單（僅限尚未進入製作的訂單）。
+
+    items 一併帶上時會整組取代舊品項，庫存跟著重新計算。
+    """
+
+    table_number: Optional[int] = None
+    items: Optional[list[OrderItemIn]] = None
+
+
+class OrderItem(BaseModel):
+    id: int
+    drink_id: int
+    drink_name: str
+    quantity: int
     special_request: Optional[str] = None
+    status: str
 
 
 class Order(BaseModel):
     id: int
     table_number: int
-    drink_id: int
-    quantity: int
-    special_request: Optional[str] = None
+    items: list[OrderItem]
+    item_count: int
+    total_quantity: int
     edit_count: int = 0
     status: str  # new / preparing / completed / delivered / cancelled
     payment_status: str  # unpaid / paid
+    payment_completed_at: Optional[str] = None
     placed_at: str
     started_at: Optional[str] = None
     completed_at: Optional[str] = None

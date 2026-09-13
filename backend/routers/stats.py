@@ -45,23 +45,27 @@ def get_stats(db: Connection = Depends(get_db)):
     def one(sql: str, params: dict | None = None):
         return db.execute(text(sql), params or {}).scalar()
 
-    today_orders = one(f"SELECT COUNT(*) FROM orders WHERE {_TODAY}")
+    today_orders = one(f"SELECT COUNT(*) FROM order_groups WHERE {_TODAY}")
+    # 杯數要從品項加總，一張訂單可能有多種飲料
     drinks_sold = one(
-        f"SELECT COALESCE(SUM(quantity), 0) FROM orders "
-        f"WHERE {_TODAY} AND status != 'cancelled'"
+        f"""
+        SELECT COALESCE(SUM(i.quantity), 0)
+        FROM order_items i JOIN order_groups g ON g.id = i.group_id
+        WHERE g.{_TODAY} AND i.status != 'cancelled'
+        """
     )
     cancelled_today = one(
-        f"SELECT COUNT(*) FROM orders WHERE {_TODAY} AND status = 'cancelled'"
+        f"SELECT COUNT(*) FROM order_groups WHERE {_TODAY} AND status = 'cancelled'"
     )
     # 未付款只看今天，與儀表板「每日結算後歸零」一致
     unpaid = one(
-        f"SELECT COUNT(*) FROM orders "
+        f"SELECT COUNT(*) FROM order_groups "
         f"WHERE {_TODAY} AND payment_status = 'unpaid' AND status != 'cancelled'"
     )
 
     # 輸入錯誤率量測：今日被改過的訂單數與總修改次數
-    edited_orders = one(f"SELECT COUNT(*) FROM orders WHERE {_TODAY} AND edit_count > 0")
-    total_edits = one(f"SELECT COALESCE(SUM(edit_count), 0) FROM orders WHERE {_TODAY}")
+    edited_orders = one(f"SELECT COUNT(*) FROM order_groups WHERE {_TODAY} AND edit_count > 0")
+    total_edits = one(f"SELECT COALESCE(SUM(edit_count), 0) FROM order_groups WHERE {_TODAY}")
     edit_rate = round(edited_orders / today_orders * 100, 1) if today_orders else 0.0
 
     # 今日完成訂單的平均製作時間（started_at → completed_at，分鐘）
@@ -70,7 +74,7 @@ def get_stats(db: Connection = Depends(get_db)):
         SELECT ROUND(
             AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60)::numeric, 1
         )
-        FROM orders
+        FROM order_groups
         WHERE {_TODAY} AND started_at IS NOT NULL AND completed_at IS NOT NULL
         """
     )
@@ -80,10 +84,12 @@ def get_stats(db: Connection = Depends(get_db)):
         db.execute(
             text(
                 f"""
-                SELECT d.name, SUM(o.quantity) AS qty
-                FROM orders o JOIN drinks d ON d.id = o.drink_id
-                WHERE {_TODAY} AND o.status != 'cancelled'
-                GROUP BY o.drink_id, d.name ORDER BY qty DESC, d.name LIMIT 5
+                SELECT d.name, SUM(i.quantity) AS qty
+                FROM order_items i
+                JOIN order_groups g ON g.id = i.group_id
+                JOIN drinks d ON d.id = i.drink_id
+                WHERE g.{_TODAY} AND i.status != 'cancelled'
+                GROUP BY i.drink_id, d.name ORDER BY qty DESC, d.name LIMIT 5
                 """
             )
         )
@@ -94,13 +100,18 @@ def get_stats(db: Connection = Depends(get_db)):
         db.execute(
             text(
                 f"""
-                SELECT o.id, o.table_number, o.quantity, o.status,
-                       d.name AS drink_name,
+                SELECT g.id, g.table_number, g.status,
+                       (SELECT COALESCE(SUM(i.quantity), 0) FROM order_items i
+                        WHERE i.group_id = g.id) AS quantity,
+                       (SELECT string_agg(d.name || ' x' || i.quantity, ' | '
+                                          ORDER BY i.id)
+                        FROM order_items i JOIN drinks d ON d.id = i.drink_id
+                        WHERE i.group_id = g.id) AS drink_name,
                        ROUND(({_MINUTES_STUCK})::numeric)::double precision
                            AS minutes_stuck,
                        {_ANDON_LIMIT} AS threshold_minutes
-                FROM orders o JOIN drinks d ON d.id = o.drink_id
-                WHERE o.status IN ('new', 'preparing', 'completed')
+                FROM order_groups g
+                WHERE g.status IN ('new', 'preparing', 'completed')
                   AND ({_MINUTES_STUCK}) >= ({_ANDON_LIMIT})
                 ORDER BY minutes_stuck DESC
                 """

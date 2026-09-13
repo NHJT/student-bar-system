@@ -122,6 +122,98 @@ def _migrate(conn: Connection) -> None:
             )
 
 
+def _table_exists(conn: Connection, table: str) -> bool:
+    return bool(
+        conn.execute(
+            text("SELECT to_regclass(:name)"), {"name": f"public.{table}"}
+        ).scalar()
+    )
+
+
+def _column_exists(conn: Connection, table: str, column: str) -> bool:
+    return bool(
+        conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = :t AND column_name = :c"
+            ),
+            {"t": table, "c": column},
+        ).fetchone()
+    )
+
+
+def _data_migrations(conn: Connection) -> list[str]:
+    """結構改變時搬移既有資料。每一段都可重複執行。"""
+    done = []
+
+    # 一張訂單多品項：舊的 orders 每一筆轉成「一張訂單 + 一個品項」。
+    # 沿用原本的 id，historical_orders.order_id 才對得上。
+    if _table_exists(conn, "orders"):
+        pending = conn.execute(text("SELECT COUNT(*) FROM orders")).scalar()
+        already = conn.execute(text("SELECT COUNT(*) FROM order_groups")).scalar()
+        if pending and not already:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO order_groups (id, table_number, status, payment_status,
+                        payment_completed_at, edit_count, placed_at, started_at,
+                        completed_at, delivered_at)
+                    SELECT id, table_number, status, payment_status,
+                           payment_completed_at, edit_count, placed_at, started_at,
+                           completed_at, delivered_at
+                    FROM orders
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO order_items (group_id, drink_id, quantity,
+                                             special_request, status)
+                    SELECT id, drink_id, quantity, special_request, status FROM orders
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    "SELECT setval('order_groups_id_seq', "
+                    "COALESCE((SELECT MAX(id) FROM order_groups), 0) + 1, false)"
+                )
+            )
+            done.append(f"搬移 {pending} 筆舊訂單到 order_groups / order_items")
+        # 舊表保留成備份，並拿掉外鍵以免擋住飲品刪除
+        conn.execute(
+            text("ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_drink_id_fkey")
+        )
+        conn.execute(text("ALTER TABLE orders RENAME TO orders_backup"))
+        done.append("舊的 orders 表已更名為 orders_backup（確認無誤後可自行刪除）")
+
+    # historical_orders：單一飲品欄位改為品項摘要
+    if _table_exists(conn, "historical_orders") and _column_exists(
+        conn, "historical_orders", "drink_name"
+    ):
+        conn.execute(
+            text("ALTER TABLE historical_orders ADD COLUMN IF NOT EXISTS items TEXT")
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE historical_orders "
+                "ADD COLUMN IF NOT EXISTS item_count INTEGER"
+            )
+        )
+        conn.execute(
+            text(
+                "UPDATE historical_orders "
+                "SET items = drink_name || ' x' || quantity, item_count = 1 "
+                "WHERE items IS NULL"
+            )
+        )
+        conn.execute(text("ALTER TABLE historical_orders DROP COLUMN drink_name"))
+        done.append("historical_orders 的 drink_name 已轉換為 items 品項摘要")
+
+    return done
+
+
 def init_db() -> None:
     """依 schema.sql 建立資料表（已存在則跳過），並補上缺少的欄位。"""
     # schema.sql 會整份送出，裡面可能出現 % 或 : 這類字元（例如註解文字）。
@@ -136,4 +228,6 @@ def init_db() -> None:
 
     with engine.connect() as conn:
         _migrate(conn)
+        for note in _data_migrations(conn):
+            print(f"  · {note}")
         conn.commit()

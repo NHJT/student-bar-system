@@ -1,5 +1,6 @@
-// 吧台頁面：三欄訂單佇列，點卡片推進狀態
+// 吧台頁面：三欄訂單佇列，一張訂單一張卡片（卡片內列出所有品項）
 // new → preparing → completed → delivered（delivered 後離開佇列）
+// 點卡片推進整張訂單；展開後可以單獨切換個別品項。
 // Andon：三段式超時門檻（見 common.js 的 ANDON_THRESHOLDS），
 //        超時除了卡片變紅，還會跳出視窗 + 播放警示音
 
@@ -66,23 +67,63 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 已經跳過提醒的訂單，key = 訂單id:狀態（換一站會再提醒一次）
   const alerted = new Set();
+  // 展開中的卡片，重繪後要保持展開
+  const expanded = new Set();
+
+  function itemRow(order, item) {
+    const next = NEXT_STATUS[item.status];
+    return `
+      <div class="bar-item ${item.status === "completed" ? "item-done" : ""}">
+        <span class="bar-item-name">${escapeHtml(item.drink_name)} × ${item.quantity}</span>
+        ${statusBadge(item.status)}
+        ${item.special_request
+          ? `<span class="order-note">📝 ${escapeHtml(item.special_request)}</span>`
+          : ""}
+        ${next
+          ? `<button class="btn btn-small btn-ghost"
+                data-item-next="${item.id}" data-group="${order.id}"
+                data-next-status="${next}">${NEXT_LABEL[item.status]}</button>`
+          : ""}
+      </div>`;
+  }
 
   function card(order) {
     const ref = order[ANDON_REF_FIELD[order.status]] ?? order.placed_at;
+    const open = expanded.has(order.id);
+    // 各品項狀態不一致時提示，讓吧台知道還有品項落後
+    const mixed = new Set(order.items.map((i) => i.status)).size > 1;
     return `
       <li data-id="${order.id}" data-status="${order.status}" data-ref="${ref}"
-          data-table="${order.table_number}" data-drink="${escapeHtml(order.drink_name)}"
-          data-qty="${order.quantity}"
-          title="點一下 → ${NEXT_LABEL[order.status]}">
-        <div class="order-row">
+          data-table="${order.table_number}"
+          data-summary="${escapeHtml(order.summary)}">
+        <div class="order-row card-head">
           <strong>桌 ${order.table_number}</strong>
-          <span>${escapeHtml(order.drink_name)} × ${order.quantity}</span>
+          <span class="card-count">${order.item_count} 品項 / ${order.total_quantity} 杯</span>
+          ${mixed ? '<span class="badge badge-preparing">品項進度不一</span>' : ""}
           <span class="order-time">${formatTime(order.placed_at)}</span>
         </div>
-        ${order.special_request
-          ? `<div class="order-note">📝 ${escapeHtml(order.special_request)}</div>`
-          : ""}
-        <div class="card-action"><span class="elapsed"></span>${NEXT_LABEL[order.status]}</div>
+        <div class="card-items" ${open ? "hidden" : ""}>
+          ${order.items
+            .map(
+              (i) => `<div class="card-item-brief">${escapeHtml(i.drink_name)} × ${i.quantity}${
+                i.special_request ? ` <span class="order-note">📝 ${escapeHtml(i.special_request)}</span>` : ""
+              }</div>`
+            )
+            .join("")}
+        </div>
+        <div class="bar-items" ${open ? "" : "hidden"}>
+          ${order.items.map((i) => itemRow(order, i)).join("")}
+        </div>
+        <div class="card-action">
+          <span class="elapsed"></span>
+          <button class="btn btn-small btn-ghost" data-expand="${order.id}">
+            ${open ? "收合品項 ▴" : "分項處理 ▾"}
+          </button>
+          <button class="btn btn-small btn-primary" data-group-next="${order.id}"
+                  data-next-status="${NEXT_STATUS[order.status]}">
+            ${NEXT_LABEL[order.status]}
+          </button>
+        </div>
       </li>`;
   }
 
@@ -91,7 +132,7 @@ document.addEventListener("DOMContentLoaded", () => {
       .map(
         (it) => `
         <li class="overdue-item">
-          <strong>桌 ${it.table} ・ ${it.drink} × ${it.qty}</strong>
+          <strong>桌 ${it.table} ・ ${it.summary}</strong>
           <div class="modal-reason">${it.reason}</div>
         </li>`
       )
@@ -113,7 +154,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const status = li.dataset.status;
       const { minutes, limit, overdue } = andonState(status, li.dataset.ref);
 
-      li.querySelector(".elapsed").textContent = `已等 ${Math.floor(minutes)} / ${limit} 分 ・ `;
+      li.querySelector(".elapsed").textContent = `已等 ${Math.floor(minutes)} / ${limit} 分`;
       li.classList.toggle("overdue", overdue);
 
       const key = `${li.dataset.id}:${status}`;
@@ -121,8 +162,7 @@ document.addEventListener("DOMContentLoaded", () => {
         alerted.add(key);
         fresh.push({
           table: li.dataset.table,
-          drink: li.dataset.drink,
-          qty: li.dataset.qty,
+          summary: li.dataset.summary,
           reason: ANDON_REASON[status](limit),
         });
       }
@@ -145,14 +185,29 @@ document.addEventListener("DOMContentLoaded", () => {
     updateAndon();
   }
 
-  // 點卡片 → 推進到下一個狀態（事件委派）
   document.querySelector("main").addEventListener("click", async (e) => {
-    const li = e.target.closest("li[data-id]");
-    if (!li) return;
-    const next = NEXT_STATUS[li.dataset.status];
-    if (!next) return;
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    const { expand, groupNext, itemNext, group, nextStatus } = btn.dataset;
+
+    // 展開／收合只影響畫面
+    if (expand !== undefined) {
+      const id = Number(expand);
+      expanded.has(id) ? expanded.delete(id) : expanded.add(id);
+      await refresh();
+      return;
+    }
+
     try {
-      await apiSend("PATCH", `/orders/${li.dataset.id}/status`, { status: next });
+      if (groupNext !== undefined) {
+        await apiSend("PATCH", `/orders/${groupNext}/status`, { status: nextStatus });
+      } else if (itemNext !== undefined) {
+        await apiSend("PATCH", `/orders/${group}/items/${itemNext}/status`, {
+          status: nextStatus,
+        });
+      } else {
+        return;
+      }
       await refresh();
     } catch (err) {
       alert(`狀態更新失敗：${err.message}`);

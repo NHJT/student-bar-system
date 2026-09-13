@@ -1,4 +1,8 @@
-"""訂單 API：下單、修改、狀態流轉、付款標記。"""
+"""訂單 API：一張訂單（order_group）可含多個品項（order_items）。
+
+狀態與時間戳記在訂單層級。各品項也有自己的狀態，吧台可以單獨切換；
+訂單狀態一律取「最落後的品項」，所有品項都做完才算完成。
+"""
 
 from typing import Optional
 
@@ -11,6 +15,7 @@ from backend.database import get_db, row_to_dict, rows_to_dicts
 from backend.models import (
     OrderCreate,
     OrderEdit,
+    OrderItemIn,
     OrderPaymentUpdate,
     OrderStatusUpdate,
 )
@@ -27,6 +32,9 @@ ALLOWED_TRANSITIONS = {
     "cancelled": set(),
 }
 
+# 訂單狀態取最落後的品項，所以每個階段有先後順序
+STAGE_ORDER = ["new", "preparing", "completed", "delivered"]
+
 # 進入某狀態時要蓋上的時間戳欄位
 STATUS_TIMESTAMP = {
     "preparing": "started_at",
@@ -34,20 +42,53 @@ STATUS_TIMESTAMP = {
     "delivered": "delivered_at",
 }
 
-_SELECT_ORDER = """
-    SELECT o.*, d.name AS drink_name, d.category AS drink_category
-    FROM orders o
-    JOIN drinks d ON d.id = o.drink_id
-"""
+_SELECT_GROUP = "SELECT * FROM order_groups"
 
 
-def _get_or_404(db: Connection, order_id: int) -> dict:
+def _items_of(db: Connection, group_ids: list[int]) -> dict[int, list[dict]]:
+    """一次撈出多張訂單的品項，避免逐張查詢。"""
+    if not group_ids:
+        return {}
+    rows = rows_to_dicts(
+        db.execute(
+            text(
+                """
+                SELECT i.id, i.group_id, i.drink_id, d.name AS drink_name,
+                       i.quantity, i.special_request, i.status
+                FROM order_items i JOIN drinks d ON d.id = i.drink_id
+                WHERE i.group_id = ANY(:ids)
+                ORDER BY i.id
+                """
+            ),
+            {"ids": group_ids},
+        )
+    )
+    grouped: dict[int, list[dict]] = {gid: [] for gid in group_ids}
+    for row in rows:
+        grouped[row.pop("group_id")].append(row)
+    return grouped
+
+
+def _with_items(db: Connection, groups: list[dict]) -> list[dict]:
+    items = _items_of(db, [g["id"] for g in groups])
+    for group in groups:
+        group["items"] = items.get(group["id"], [])
+        group["item_count"] = len(group["items"])
+        group["total_quantity"] = sum(i["quantity"] for i in group["items"])
+        # 一眼看得出內容，吧台與經理的清單都用得到
+        group["summary"] = " | ".join(
+            f"{i['drink_name']} x{i['quantity']}" for i in group["items"]
+        )
+    return groups
+
+
+def _get_or_404(db: Connection, group_id: int) -> dict:
     row = db.execute(
-        text(_SELECT_ORDER + " WHERE o.id = :id"), {"id": order_id}
+        text(_SELECT_GROUP + " WHERE id = :id"), {"id": group_id}
     ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="找不到這筆訂單")
-    return row_to_dict(row)
+    return _with_items(db, [row_to_dict(row)])[0]
 
 
 @router.get("")
@@ -64,82 +105,111 @@ def list_orders(
     """
     conditions, params = [], {}
     if status is not None:
-        conditions.append("o.status = :status")
+        conditions.append("status = :status")
         params["status"] = status
     if table_number is not None:
-        conditions.append("o.table_number = :table_number")
+        conditions.append("table_number = :table_number")
         params["table_number"] = table_number
     if today:
-        conditions.append("o.placed_at::date = NOW()::date")
-    sql = _SELECT_ORDER
+        conditions.append("placed_at::date = NOW()::date")
+    sql = _SELECT_GROUP
     if conditions:
         sql += " WHERE " + " AND ".join(conditions)
-    sql += " ORDER BY o.placed_at ASC, o.id ASC"
-    return rows_to_dicts(db.execute(text(sql), params))
+    sql += " ORDER BY placed_at ASC, id ASC"
+    return _with_items(db, rows_to_dicts(db.execute(text(sql), params)))
 
 
-@router.get("/{order_id}")
-def get_order(order_id: int, db: Connection = Depends(get_db)):
-    return _get_or_404(db, order_id)
+@router.get("/{group_id}")
+def get_order(group_id: int, db: Connection = Depends(get_db)):
+    return _get_or_404(db, group_id)
 
 
-def _available_drink_or_error(db: Connection, drink_id: int) -> dict:
-    drink = db.execute(
-        text("SELECT * FROM drinks WHERE id = :id"), {"id": drink_id}
-    ).fetchone()
-    if drink is None:
-        raise HTTPException(status_code=404, detail="找不到這杯飲料")
-    if not drink.is_available:
-        raise HTTPException(status_code=409, detail=f"「{drink.name}」目前停售")
-    return row_to_dict(drink)
+# ---------- 建立與修改 ----------
+def _validate_items(db: Connection, items: list[OrderItemIn]) -> None:
+    if not items:
+        raise HTTPException(status_code=400, detail="訂單至少要有一個品項")
+    for item in items:
+        if item.quantity < 1:
+            raise HTTPException(status_code=400, detail="每個品項數量至少為 1")
+        drink = db.execute(
+            text("SELECT * FROM drinks WHERE id = :id"), {"id": item.drink_id}
+        ).fetchone()
+        if drink is None:
+            raise HTTPException(status_code=404, detail="找不到這杯飲料")
+        if not drink.is_available:
+            raise HTTPException(status_code=409, detail=f"「{drink.name}」目前停售")
+
+
+def _deduct_items(db: Connection, items: list[OrderItemIn]) -> list[int]:
+    """依所有品項的配方扣庫存；任何一項不足就整張訂單拒收。"""
+    affected: list[int] = []
+    for item in items:
+        ids, shortages = inventory.check_and_deduct(db, item.drink_id, item.quantity)
+        if shortages:
+            db.rollback()
+            raise HTTPException(
+                status_code=409, detail="庫存不足：" + "；".join(shortages)
+            )
+        affected.extend(ids)
+    return list(dict.fromkeys(affected))
+
+
+def _restore_items(db: Connection, items: list[dict]) -> list[int]:
+    restored: list[int] = []
+    for item in items:
+        restored.extend(inventory.restore(db, item["drink_id"], item["quantity"]))
+    return list(dict.fromkeys(restored))
+
+
+def _insert_items(db: Connection, group_id: int, items: list[OrderItemIn]) -> None:
+    db.execute(
+        text(
+            "INSERT INTO order_items (group_id, drink_id, quantity, special_request) "
+            "VALUES (:group_id, :drink_id, :quantity, :special_request)"
+        ),
+        [
+            {
+                "group_id": group_id,
+                "drink_id": item.drink_id,
+                "quantity": item.quantity,
+                "special_request": item.special_request,
+            }
+            for item in items
+        ],
+    )
 
 
 @router.post("", status_code=201)
 async def create_order(payload: OrderCreate, db: Connection = Depends(get_db)):
-    if payload.quantity < 1:
-        raise HTTPException(status_code=400, detail="數量至少為 1")
-    _available_drink_or_error(db, payload.drink_id)
+    _validate_items(db, payload.items)
+    affected = _deduct_items(db, payload.items)
 
-    # 依配方扣庫存；任何一項不足就整筆拒單
-    affected, shortages = inventory.check_and_deduct(
-        db, payload.drink_id, payload.quantity
-    )
-    if shortages:
-        db.rollback()
-        raise HTTPException(status_code=409, detail="庫存不足：" + "；".join(shortages))
-
-    new_id = db.execute(
+    group_id = db.execute(
         text(
-            "INSERT INTO orders (table_number, drink_id, quantity, special_request) "
-            "VALUES (:table_number, :drink_id, :quantity, :special_request) "
+            "INSERT INTO order_groups (table_number) VALUES (:table_number) "
             "RETURNING id"
         ),
-        {
-            "table_number": payload.table_number,
-            "drink_id": payload.drink_id,
-            "quantity": payload.quantity,
-            "special_request": payload.special_request,
-        },
+        {"table_number": payload.table_number},
     ).scalar_one()
+    _insert_items(db, group_id, payload.items)
     db.commit()
 
-    order = _get_or_404(db, new_id)
+    order = _get_or_404(db, group_id)
     await manager.broadcast({"event": "order_created", "order": order})
     await inventory.broadcast_stock_events(db, manager, affected)
     return order
 
 
-@router.patch("/{order_id}")
+@router.patch("/{group_id}")
 async def edit_order(
-    order_id: int, payload: OrderEdit, db: Connection = Depends(get_db)
+    group_id: int, payload: OrderEdit, db: Connection = Depends(get_db)
 ):
-    """服務生修改訂單（品項／數量／特殊需求）。
+    """服務生修改訂單（桌號／品項），只有還沒進入製作的訂單可以改。
 
-    只有還沒進入製作（status = 'new'）的訂單可以改；每次修改 edit_count + 1，
-    作為輸入錯誤率的量測依據。品項或數量改變時，庫存會先退回原配方用量、
-    再依新內容扣料。
+    每次修改 edit_count + 1，作為輸入錯誤率的量測依據。
+    帶了 items 就整組取代，庫存先全部退回再依新內容重扣。
     """
-    order = _get_or_404(db, order_id)
+    order = _get_or_404(db, group_id)
     if order["status"] != "new":
         raise HTTPException(
             status_code=409,
@@ -150,48 +220,69 @@ async def edit_order(
     if not fields:
         raise HTTPException(status_code=400, detail="沒有要修改的欄位")
 
-    new_drink_id = fields.get("drink_id", order["drink_id"])
-    new_quantity = fields.get("quantity", order["quantity"])
-    if new_quantity < 1:
-        raise HTTPException(status_code=400, detail="數量至少為 1")
-    _available_drink_or_error(db, new_drink_id)
-
-    # 品項或數量有變才動庫存：先退回原本用量，再依新內容扣料
     affected: list[int] = []
-    if new_drink_id != order["drink_id"] or new_quantity != order["quantity"]:
-        restored = inventory.restore(db, order["drink_id"], order["quantity"])
-        deducted, shortages = inventory.check_and_deduct(
-            db, new_drink_id, new_quantity
-        )
-        if shortages:
-            db.rollback()  # 連同退料一起復原，訂單維持原樣
-            raise HTTPException(
-                status_code=409, detail="庫存不足：" + "；".join(shortages)
-            )
+    if payload.items is not None:
+        _validate_items(db, payload.items)
+        restored = _restore_items(db, order["items"])
+        deducted = _deduct_items(db, payload.items)
         affected = list(dict.fromkeys(restored + deducted))
+        db.execute(
+            text("DELETE FROM order_items WHERE group_id = :id"), {"id": group_id}
+        )
+        _insert_items(db, group_id, payload.items)
 
-    fields["edit_count"] = order["edit_count"] + 1
-    sets = ", ".join(f"{name} = :{name}" for name in fields)
+    sets = ["edit_count = edit_count + 1"]
+    params = {"id": group_id}
+    if payload.table_number is not None:
+        sets.append("table_number = :table_number")
+        params["table_number"] = payload.table_number
     db.execute(
-        text(f"UPDATE orders SET {sets} WHERE id = :id"), {**fields, "id": order_id}
+        text(f"UPDATE order_groups SET {', '.join(sets)} WHERE id = :id"), params
     )
     db.commit()
 
-    updated = _get_or_404(db, order_id)
+    updated = _get_or_404(db, group_id)
     await manager.broadcast({"event": "order_updated", "order": updated})
     if affected:
         await inventory.broadcast_stock_events(db, manager, affected)
     return updated
 
 
-@router.patch("/{order_id}/status")
+# ---------- 狀態流轉 ----------
+def _sync_group_status(db: Connection, group_id: int, current: str) -> str:
+    """依品項狀態重算訂單狀態，需要時補上時間戳。
+
+    取最落後的品項：三杯裡有一杯還沒開始做，整張訂單就還是新單。
+    全部取消才算整張取消。
+    """
+    rows = db.execute(
+        text("SELECT status FROM order_items WHERE group_id = :id"), {"id": group_id}
+    ).fetchall()
+    active = [r.status for r in rows if r.status != "cancelled"]
+    target = "cancelled" if not active else min(active, key=STAGE_ORDER.index)
+    if target == current:
+        return current
+
+    sets = ["status = :status"]
+    # 只在第一次進入該階段時蓋時間戳，之後品項狀態再變動也不覆寫
+    if target in STATUS_TIMESTAMP:
+        column = STATUS_TIMESTAMP[target]
+        sets.append(f"{column} = COALESCE({column}, NOW())")
+    db.execute(
+        text(f"UPDATE order_groups SET {', '.join(sets)} WHERE id = :id"),
+        {"status": target, "id": group_id},
+    )
+    return target
+
+
+@router.patch("/{group_id}/status")
 async def update_status(
-    order_id: int,
+    group_id: int,
     payload: OrderStatusUpdate,
     db: Connection = Depends(get_db),
 ):
-    """推進訂單狀態，並蓋上對應時間戳。"""
-    order = _get_or_404(db, order_id)
+    """推進整張訂單的狀態，所有還沒到該階段的品項一起帶過去。"""
+    order = _get_or_404(db, group_id)
     current, target = order["status"], payload.status
     if target not in ALLOWED_TRANSITIONS:
         raise HTTPException(status_code=400, detail=f"未知狀態: {target}")
@@ -199,35 +290,88 @@ async def update_status(
         raise HTTPException(
             status_code=409, detail=f"不能從 {current} 切換到 {target}"
         )
-    sets = ["status = :status"]
-    if target in STATUS_TIMESTAMP:
-        sets.append(f"{STATUS_TIMESTAMP[target]} = NOW()")
-    db.execute(
-        text(f"UPDATE orders SET {', '.join(sets)} WHERE id = :id"),
-        {"status": target, "id": order_id},
-    )
+
+    if target == "cancelled":
+        db.execute(
+            text(
+                "UPDATE order_items SET status = 'cancelled' "
+                "WHERE group_id = :id AND status <> 'cancelled'"
+            ),
+            {"id": group_id},
+        )
+    else:
+        # 已經走在前面的品項不倒退
+        db.execute(
+            text(
+                "UPDATE order_items SET status = :status "
+                "WHERE group_id = :id AND status <> 'cancelled' "
+                "AND array_position(:order, status) < array_position(:order, :status)"
+            ),
+            {"status": target, "id": group_id, "order": STAGE_ORDER},
+        )
+    _sync_group_status(db, group_id, current)
 
     # 還沒開始製作就取消 → 把配方用量退回庫存
     restored: list[int] = []
     if target == "cancelled" and current == "new":
-        restored = inventory.restore(db, order["drink_id"], order["quantity"])
+        restored = _restore_items(db, order["items"])
 
     db.commit()
-    updated = _get_or_404(db, order_id)
+    updated = _get_or_404(db, group_id)
     await manager.broadcast({"event": "order_updated", "order": updated})
     if restored:
         await inventory.broadcast_stock_events(db, manager, restored)
     return updated
 
 
-@router.patch("/{order_id}/payment")
+@router.patch("/{group_id}/items/{item_id}/status")
+async def update_item_status(
+    group_id: int,
+    item_id: int,
+    payload: OrderStatusUpdate,
+    db: Connection = Depends(get_db),
+):
+    """單獨推進某個品項的狀態；訂單狀態隨之重算。"""
+    order = _get_or_404(db, group_id)
+    item = next((i for i in order["items"] if i["id"] == item_id), None)
+    if item is None:
+        raise HTTPException(status_code=404, detail="這張訂單沒有這個品項")
+
+    current, target = item["status"], payload.status
+    if target not in ALLOWED_TRANSITIONS:
+        raise HTTPException(status_code=400, detail=f"未知狀態: {target}")
+    if target not in ALLOWED_TRANSITIONS[current]:
+        raise HTTPException(
+            status_code=409, detail=f"不能從 {current} 切換到 {target}"
+        )
+
+    db.execute(
+        text("UPDATE order_items SET status = :status WHERE id = :id"),
+        {"status": target, "id": item_id},
+    )
+    _sync_group_status(db, group_id, order["status"])
+
+    # 整張訂單都還沒開工時取消某個品項 → 退回該品項的料
+    restored: list[int] = []
+    if target == "cancelled" and current == "new":
+        restored = _restore_items(db, [item])
+
+    db.commit()
+    updated = _get_or_404(db, group_id)
+    await manager.broadcast({"event": "order_updated", "order": updated})
+    if restored:
+        await inventory.broadcast_stock_events(db, manager, restored)
+    return updated
+
+
+@router.patch("/{group_id}/payment")
 async def update_payment(
-    order_id: int,
+    group_id: int,
     payload: OrderPaymentUpdate,
     db: Connection = Depends(get_db),
 ):
-    """標記付款狀態（服務生用）。"""
-    _get_or_404(db, order_id)
+    """標記付款狀態（服務生用），以整張訂單為單位。"""
+    _get_or_404(db, group_id)
     if payload.payment_status not in ("unpaid", "paid"):
         raise HTTPException(
             status_code=400, detail=f"未知付款狀態: {payload.payment_status}"
@@ -236,12 +380,12 @@ async def update_payment(
     stamp = "NOW()" if payload.payment_status == "paid" else "NULL"
     db.execute(
         text(
-            f"UPDATE orders SET payment_status = :ps, payment_completed_at = {stamp} "
-            "WHERE id = :id"
+            f"UPDATE order_groups SET payment_status = :ps, "
+            f"payment_completed_at = {stamp} WHERE id = :id"
         ),
-        {"ps": payload.payment_status, "id": order_id},
+        {"ps": payload.payment_status, "id": group_id},
     )
     db.commit()
-    updated = _get_or_404(db, order_id)
+    updated = _get_or_404(db, group_id)
     await manager.broadcast({"event": "order_updated", "order": updated})
     return updated

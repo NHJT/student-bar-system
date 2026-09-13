@@ -13,13 +13,14 @@
   </header>
 
   <main class="layout-two-col">
-    <!-- 點餐區（第三步實作） -->
+    <!-- 點餐區：先把品項一項一項加進本次訂單，最後整張送出 -->
     <section class="panel">
       <h2>點餐</h2>
-      <form id="order-form">
-        <label>桌號
-          <select id="table-number" required></select>
-        </label>
+      <label>桌號
+        <select id="table-number" required></select>
+      </label>
+
+      <form id="add-item-form">
         <label>飲料
           <select id="drink-select" required></select>
         </label>
@@ -29,8 +30,17 @@
         <label>特殊需求
           <input type="text" id="special-request" placeholder="例：少冰、去薄荷">
         </label>
-        <button type="submit" class="btn btn-primary">送出訂單</button>
+        <button type="submit" class="btn btn-small btn-ghost">＋ 加入訂單</button>
       </form>
+
+      <h2>本次訂單 <small id="cart-count" class="cart-count"></small></h2>
+      <ul id="cart-list" class="cart-list">
+        <li class="placeholder">還沒加入任何品項</li>
+      </ul>
+      <div class="cart-actions">
+        <button id="cart-submit" class="btn btn-primary" disabled>送出訂單</button>
+        <button id="cart-clear" class="btn btn-small btn-ghost" disabled>清空</button>
+      </div>
     </section>
 
     <!-- 訂單與付款區（第三步實作） -->

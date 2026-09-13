@@ -30,8 +30,8 @@ backend/
     history.py     # 歷史數據 API
 frontend/
   index.html       # 角色選擇首頁
-  waiter.html      # 服務生：點餐、桌號、標記付款、修改／取消未製作的訂單
-  bar.html         # 吧台：訂單佇列、狀態切換、Andon 超時（變紅＋跳窗＋警示音）
+  waiter.html      # 服務生：購物車式點餐（一張訂單多品項）、標記付款、修改／取消
+  bar.html         # 吧台：訂單佇列（一張訂單一張卡片，可展開分項處理）、Andon 超時
   manager.html     # 經理：今日 KPI、熱門品項、超時訂單、訂單總覽、
                    #       庫存警示，以及飲品／原料／配方管理
   history.html     # 歷史數據：每個營業日一列，點開看明細並下載原始 CSV
@@ -90,7 +90,7 @@ python -m backend.seed_data --force   # 連同既有訂單一起清除
 ```
 
 ⚠️ 這是**重置**而非補資料：執行時會先清空 `recipes`、`drinks`、`ingredients`
-再寫入。因為 `orders` 參照 `drinks`，資料庫裡若已有訂單，腳本會中止並要求加
+再寫入。因為 `order_items` 參照 `drinks`，資料庫裡若已有訂單，腳本會中止並要求加
 `--force`，避免不小心刪掉營業資料。
 
 每杯用量是合理的起始值（基酒 0.05 瓶、利口酒 0.02 瓶、萊姆汁 0.05 瓶、
@@ -119,12 +119,26 @@ python -m backend.seed_data --force   # 連同既有訂單一起清除
 | ingredients | id, name, unit, current_stock, reorder_point |
 | recipes | drink_id, ingredient_id, quantity_needed |
 | daily_summary | business_date, total_orders, drinks_sold, avg_prep_minutes, max_wait_minutes, overdue_orders, edit_rate, unpaid_orders, top_drinks |
-| historical_orders | business_date, order_id, table_number, drink_name, quantity, status, placed_at, started_at, completed_at, delivered_at, payment_status, payment_completed_at, is_modified, modify_count |
-| orders | id, table_number, drink_id, quantity, special_request, status, payment_status, payment_completed_at, edit_count, placed_at, started_at, completed_at, delivered_at |
+| historical_orders | business_date, order_id, table_number, items, item_count, quantity, status, placed_at, started_at, completed_at, delivered_at, payment_status, payment_completed_at, is_modified, modify_count |
+| order_groups | id, table_number, status, payment_status, payment_completed_at, edit_count, placed_at, started_at, completed_at, delivered_at |
+| order_items | id, group_id, drink_id, quantity, special_request, status |
 
 `edit_count` 記錄服務生修改該筆訂單的次數，作為輸入錯誤率的量測依據。
 新增欄位時要同時登記到 `database.py` 的 `_MIGRATIONS`，既有的資料庫執行
 `python init_db.py` 才會一起升級。
+
+## 一張訂單多品項
+
+一張訂單（`order_groups`）可以包含多個品項（`order_items`），同一桌點不同飲料
+只要送出一張訂單。
+
+- **服務生**：選好桌號後逐項「加入訂單」，清單裡可改數量、改特殊需求或移除，
+  確認後整張送出。同一款飲料且特殊需求相同會自動合併數量。
+- **吧台**：一張訂單一張卡片，卡片內列出所有品項。點按鈕推進整張訂單；
+  需要分開做時展開卡片，對個別品項單獨切換狀態。
+- **狀態與時間戳記在訂單層級**。訂單狀態一律取**最落後的品項**：三杯裡有一杯
+  還沒開始做，整張訂單就還是新單，全部做完才算完成。這樣 Andon 計時不會虛報。
+- 庫存以整張訂單為單位結算：任一品項的原料不足就整張拒收，不會只扣一半。
 
 訂單狀態流：`new → preparing → completed → delivered`（可 `cancelled`）；付款：`unpaid → paid`。
 訂單只有在 `new` 階段可以修改或取消，取消時食材會退回庫存。
@@ -146,8 +160,9 @@ python -m backend.seed_data --force   # 連同既有訂單一起清除
 
 彙總統計之外，結算時也會把當日**每一筆訂單**另存一份到 `historical_orders`，
 供事後自行計算彙總統計沒有涵蓋的指標（90 百分位等待時間、每小時訂單量等）。
-欄位：日期、訂單 id、桌號、飲品名稱、數量、狀態、四個階段時間戳、付款狀態與
-付款時間、是否曾被修改、修改次數。
+欄位：日期、訂單 id、桌號、品項清單（`items`，例如 `Negroni x2 | Gin Tonic x1`）、
+品項數、總杯數、狀態、四個階段時間戳、付款狀態與付款時間、是否曾被修改、修改次數。
+一張訂單一列，品項寫在同一筆記錄的 `items` 欄位裡。
 
 `status` 不在原始需求裡，但少了它就分不出「已取消」和「結算當下還沒做完」，
 算平均等待時間時會把取消的單算進去，所以一併保留。
@@ -176,8 +191,8 @@ POST /api/history/settle             立刻結算今天（重複執行會覆蓋�
 - 有訂單但沒有彙總紀錄（錯過排程）
 - 有彙總但沒有原始訂單紀錄（那天是加入 `historical_orders` 之前結算的）
 
-原始訂單一直留在 `orders` 裡，所以重跑一次就能補齊。若該日的訂單已不在
-`orders`（例如當初就沒有留存），則無法還原，歷史頁會標示那天不提供 CSV 下載。
+原始訂單一直留在 `order_groups` / `order_items` 裡，所以重跑一次就能補齊。
+若該日的訂單已不在資料庫（例如當初就沒有留存），則無法還原，歷史頁會標示那天不提供 CSV 下載。
 
 ## 主檔管理（經理儀表板）
 
