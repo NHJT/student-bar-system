@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS orders (
                     CHECK (status IN ('new', 'preparing', 'completed', 'delivered', 'cancelled')),
     payment_status  TEXT        NOT NULL DEFAULT 'unpaid'
                     CHECK (payment_status IN ('unpaid', 'paid')),
+    payment_completed_at TIMESTAMPTZ,             -- 標記為已付款的時間
     edit_count      INTEGER     NOT NULL DEFAULT 0,  -- 服務生修改次數（輸入錯誤率量測）
     -- 時間一律以 TIMESTAMPTZ 存 UTC；顯示時再轉成 APP_TIMEZONE
     placed_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -60,4 +61,25 @@ CREATE TABLE IF NOT EXISTS daily_summary (
     unpaid_orders    INTEGER          NOT NULL,
     top_drinks       JSONB            NOT NULL,  -- [{"name": ..., "qty": n}, ...] 由多到少
     created_at       TIMESTAMPTZ      NOT NULL DEFAULT NOW()
+);
+
+-- 每日結算時另存一份當日訂單原始紀錄，供事後自行計算指標
+-- （平均／90 百分位等待時間、每小時訂單量等）。
+-- 與 daily_summary 同步保留 90 個營業日。
+CREATE TABLE IF NOT EXISTS historical_orders (
+    business_date        DATE        NOT NULL,
+    order_id             INTEGER     NOT NULL,
+    table_number         INTEGER     NOT NULL,
+    drink_name           TEXT        NOT NULL,
+    quantity             INTEGER     NOT NULL,
+    status               TEXT        NOT NULL,  -- 需要它才能區分已取消與未完成的訂單
+    placed_at            TIMESTAMPTZ NOT NULL,
+    started_at           TIMESTAMPTZ,
+    completed_at         TIMESTAMPTZ,
+    delivered_at         TIMESTAMPTZ,
+    payment_status       TEXT        NOT NULL,
+    payment_completed_at TIMESTAMPTZ,
+    is_modified          BOOLEAN     NOT NULL,
+    modify_count         INTEGER     NOT NULL,
+    PRIMARY KEY (business_date, order_id)
 );

@@ -57,6 +57,15 @@ document.addEventListener("DOMContentLoaded", () => {
               })
               .join("")}</div>`
           : '<span class="placeholder">當天沒有售出紀錄</span>'}
+
+        <div class="history-actions">
+          <a class="btn btn-small btn-primary"
+             href="/api/history/${encodeURIComponent(day.business_date)}/orders.csv"
+             download>下載 CSV</a>
+          <span class="history-hint">
+            當日 ${day.total_orders} 筆訂單的原始紀錄，含各階段時間戳與付款、修改次數
+          </span>
+        </div>
       </div>`;
   }
 

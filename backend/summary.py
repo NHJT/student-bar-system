@@ -90,9 +90,31 @@ _UPSERT = text(
 )
 
 
+# 當日訂單原始紀錄，供事後自行計算指標
+_SNAPSHOT_ORDERS = text(
+    """
+    INSERT INTO historical_orders (
+        business_date, order_id, table_number, drink_name, quantity, status,
+        placed_at, started_at, completed_at, delivered_at,
+        payment_status, payment_completed_at, is_modified, modify_count
+    )
+    SELECT o.placed_at::date, o.id, o.table_number, d.name, o.quantity, o.status,
+           o.placed_at, o.started_at, o.completed_at, o.delivered_at,
+           o.payment_status, o.payment_completed_at,
+           o.edit_count > 0, o.edit_count
+    FROM orders o JOIN drinks d ON d.id = o.drink_id
+    WHERE o.placed_at::date = :business_date
+    """
+)
+
+
 def _trim_to_limit(conn: Connection) -> int:
-    """只保留最新的 HISTORY_LIMIT 筆，多的從最舊的開始刪。回傳刪除筆數。"""
-    return conn.execute(
+    """只保留最新的 HISTORY_LIMIT 個營業日，多的從最舊的開始刪。
+
+    historical_orders 跟著 daily_summary 一起裁，兩邊的日期永遠一致。
+    回傳刪掉的營業日數。
+    """
+    trimmed = conn.execute(
         text(
             """
             DELETE FROM daily_summary
@@ -104,6 +126,13 @@ def _trim_to_limit(conn: Connection) -> int:
         ),
         {"limit": HISTORY_LIMIT},
     ).rowcount
+    conn.execute(
+        text(
+            "DELETE FROM historical_orders WHERE business_date NOT IN "
+            "(SELECT business_date FROM daily_summary)"
+        )
+    )
+    return trimmed
 
 
 def settle_day(conn: Connection, business_date: date) -> dict | None:
@@ -137,11 +166,20 @@ def settle_day(conn: Connection, business_date: date) -> dict | None:
         _UPSERT,
         {**record, "top_drinks": json.dumps(top_drinks, ensure_ascii=False)},
     )
+
+    # 原始訂單紀錄整日重存一次，重跑同一天不會產生重複
+    conn.execute(
+        text("DELETE FROM historical_orders WHERE business_date = :business_date"),
+        {"business_date": business_date},
+    )
+    snapshot = conn.execute(_SNAPSHOT_ORDERS, {"business_date": business_date}).rowcount
+
     # 寫入後再裁切，確保永遠不超過上限
     trimmed = _trim_to_limit(conn)
 
     record["business_date"] = business_date.isoformat()
     record["top_drinks"] = top_drinks
+    record["orders_archived"] = snapshot
     record["trimmed"] = trimmed
     return record
 

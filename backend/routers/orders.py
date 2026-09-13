@@ -232,8 +232,13 @@ async def update_payment(
         raise HTTPException(
             status_code=400, detail=f"未知付款狀態: {payload.payment_status}"
         )
+    # 標記為已付款時蓋上時間戳；改回未付款則清掉
+    stamp = "NOW()" if payload.payment_status == "paid" else "NULL"
     db.execute(
-        text("UPDATE orders SET payment_status = :ps WHERE id = :id"),
+        text(
+            f"UPDATE orders SET payment_status = :ps, payment_completed_at = {stamp} "
+            "WHERE id = :id"
+        ),
         {"ps": payload.payment_status, "id": order_id},
     )
     db.commit()

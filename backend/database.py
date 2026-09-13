@@ -23,7 +23,7 @@ SCHEMA_PATH = BASE_DIR / "schema.sql"
 APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Asia/Taipei")
 
 try:
-    _DISPLAY_TZ = ZoneInfo(APP_TIMEZONE)
+    DISPLAY_TZ = ZoneInfo(APP_TIMEZONE)
 except ZoneInfoNotFoundError as exc:
     raise RuntimeError(f"APP_TIMEZONE 不是有效的時區名稱: {APP_TIMEZONE}") from exc
 
@@ -81,9 +81,9 @@ def _convert(value):
     """
     if isinstance(value, datetime):
         if value.tzinfo is not None:
-            value = value.astimezone(_DISPLAY_TZ)
+            value = value.astimezone(DISPLAY_TZ)
         else:  # 理論上不會發生（欄位都是 TIMESTAMPTZ），保險起見補上時區
-            value = value.replace(tzinfo=_DISPLAY_TZ)
+            value = value.replace(tzinfo=DISPLAY_TZ)
         return value.isoformat(timespec="seconds")
     return value
 
@@ -102,6 +102,8 @@ def rows_to_dicts(result) -> list[dict]:
 # 所以新增欄位時要同時登記在這裡。
 _MIGRATIONS = [
     ("orders", "edit_count", "INTEGER NOT NULL DEFAULT 0"),
+    # 舊資料無從得知當初的付款時間，補上欄位後只有之後的訂單才會有值
+    ("orders", "payment_completed_at", "TIMESTAMPTZ"),
 ]
 
 

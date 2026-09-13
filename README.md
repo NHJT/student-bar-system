@@ -14,11 +14,11 @@ init_db.py         # 部署後手動執行的資料表初始化腳本
 backend/
   main.py          # FastAPI 進入點（含 WebSocket 端點、靜態檔掛載）
   database.py      # SQLAlchemy 連線（讀 DATABASE_URL）與資料表初始化
-  schema.sql       # 四張資料表結構（PostgreSQL）
+  schema.sql       # 資料表結構（PostgreSQL）
   models.py        # Pydantic 模型
   seed_data.py     # 酒吧真實菜單（飲品/原料/配方），會先清空再寫入
   inventory.py     # 配方庫存連動（下單扣料/取消退料/補貨警示）
-  summary.py       # 每日結算：把當日數字寫進 daily_summary
+  summary.py       # 每日結算：彙總寫進 daily_summary，原始訂單存 historical_orders
   scheduler.py     # 每天 23:59 觸發結算的排程
   ws.py            # WebSocket 連線管理
   routers/
@@ -34,7 +34,7 @@ frontend/
   bar.html         # 吧台：訂單佇列、狀態切換、Andon 超時（變紅＋跳窗＋警示音）
   manager.html     # 經理：今日 KPI、熱門品項、超時訂單、訂單總覽、
                    #       庫存警示，以及飲品／原料／配方管理
-  history.html     # 歷史數據：每個營業日一列，點開看當日明細
+  history.html     # 歷史數據：每個營業日一列，點開看明細並下載原始 CSV
   css/style.css
   js/common.js     # 共用 API / WebSocket 工具
   js/waiter.js  js/bar.js  js/manager.js
@@ -118,7 +118,9 @@ python -m backend.seed_data --force   # 連同既有訂單一起清除
 | drinks | id, name, category, is_available |
 | ingredients | id, name, unit, current_stock, reorder_point |
 | recipes | drink_id, ingredient_id, quantity_needed |
-| orders | id, table_number, drink_id, quantity, special_request, status, payment_status, edit_count, placed_at, started_at, completed_at, delivered_at |
+| daily_summary | business_date, total_orders, drinks_sold, avg_prep_minutes, max_wait_minutes, overdue_orders, edit_rate, unpaid_orders, top_drinks |
+| historical_orders | business_date, order_id, table_number, drink_name, quantity, status, placed_at, started_at, completed_at, delivered_at, payment_status, payment_completed_at, is_modified, modify_count |
+| orders | id, table_number, drink_id, quantity, special_request, status, payment_status, payment_completed_at, edit_count, placed_at, started_at, completed_at, delivered_at |
 
 `edit_count` 記錄服務生修改該筆訂單的次數，作為輸入錯誤率的量測依據。
 新增欄位時要同時登記到 `database.py` 的 `_MIGRATIONS`，既有的資料庫執行
@@ -140,12 +142,30 @@ python -m backend.seed_data --force   # 連同既有訂單一起清除
 **今天**的訂單（`GET /api/orders?today=true`），所以跨過午夜後畫面自然歸零。
 吧台與服務生頁面不加這個條件，跨夜還沒做完的訂單才不會從佇列消失。
 
+### 原始訂單紀錄
+
+彙總統計之外，結算時也會把當日**每一筆訂單**另存一份到 `historical_orders`，
+供事後自行計算彙總統計沒有涵蓋的指標（90 百分位等待時間、每小時訂單量等）。
+欄位：日期、訂單 id、桌號、飲品名稱、數量、狀態、四個階段時間戳、付款狀態與
+付款時間、是否曾被修改、修改次數。
+
+`status` 不在原始需求裡，但少了它就分不出「已取消」和「結算當下還沒做完」，
+算平均等待時間時會把取消的單算進去，所以一併保留。
+
+`historical_orders` 與 `daily_summary` 保留同樣的 90 個營業日，裁切時同步刪除，
+不會出現有原始紀錄卻沒有彙總的孤兒資料。
+
+在歷史數據頁展開任一天，點「下載 CSV」即可取得該日原始紀錄。CSV 的時間欄位是
+`APP_TIMEZONE` 當地時間的 `YYYY-MM-DD HH:MM:SS`，並帶 UTF-8 BOM，Excel 開啟
+中文品名不會亂碼，pandas 也能直接解析。
+
 相關 API：
 
 ```
-GET  /api/history          所有歷史營業日（新的在前）
-GET  /api/history/{date}   單一營業日
-POST /api/history/settle   立刻結算今天（不必等 23:59，重複執行會覆蓋同一天）
+GET  /api/history                    所有歷史營業日（新的在前）
+GET  /api/history/{date}             單一營業日
+GET  /api/history/{date}/orders.csv  該日原始訂單紀錄（CSV 下載）
+POST /api/history/settle             立刻結算今天（重複執行會覆蓋同一天）
 ```
 
 經理儀表板右上角的「查看歷史數據」進入 `/history.html`，點任一營業日可展開
