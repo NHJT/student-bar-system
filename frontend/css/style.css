@@ -110,9 +110,14 @@ form input, form select,
   padding: .6rem 1.2rem; border: none; border-radius: 8px;
   font-size: 1rem; cursor: pointer;
 }
+/* 按鈕語義（三種顏色各有固定意義，不要混用）：
+   .btn-primary 藍底白字 → 推進流程的主要動作（加入訂單、送出訂單、標記付款）
+   .btn-ghost   白底藍字 → 修正用的次要動作（清空、修改、放棄）
+   .btn-danger  白底紅字 → 不可逆的動作（取消訂單、刪除）
+   .btn-small / .btn-action 只管尺寸，不帶顏色 */
 .btn-primary { background: var(--primary); color: #fff; }
 
-.btn-small { padding: .25rem .6rem; font-size: .8rem; background: var(--primary); color: #fff; }
+.btn-small { padding: .25rem .6rem; font-size: .8rem; }
 .btn-ghost { background: transparent; color: var(--primary); border: 1px solid var(--border); }
 /* 刪除鍵用外框而非紅底：紅色填滿保留給 Andon 超時與庫存警示 */
 .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--border); }

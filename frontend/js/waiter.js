@@ -78,7 +78,7 @@ document.addEventListener("DOMContentLoaded", () => {
                   <button class="stepper-btn" data-step="${idx}" data-delta="1"
                           aria-label="增加數量">＋</button>
                 </span>
-                <button class="btn btn-small btn-danger" data-remove="${idx}">移除</button>
+                <button class="btn btn-small btn-ghost" data-remove="${idx}">移除</button>
               </div>
               <input type="text" class="cart-note" placeholder="特殊需求"
                      value="${escapeHtml(it.special_request ?? "")}" data-note="${idx}">
@@ -189,7 +189,7 @@ document.addEventListener("DOMContentLoaded", () => {
           ${o.edit_count > 0 ? `<span class="badge badge-edited">已改 ${o.edit_count} 次</span>` : ""}
           <span class="order-time">${formatTime(o.placed_at)}</span>
           ${o.payment_status === "unpaid"
-            ? `<button class="btn btn-small" data-pay="${o.id}">標記付款</button>`
+            ? `<button class="btn btn-small btn-primary" data-pay="${o.id}">標記付款</button>`
             : ""}
           ${editable
             ? `<button class="btn btn-small btn-ghost" data-edit="${o.id}">修改</button>
@@ -225,7 +225,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <input type="number" min="1" value="${item?.quantity ?? 1}" data-field="quantity">
         <input type="text" value="${escapeHtml(item?.special_request ?? "")}"
                data-field="special" placeholder="特殊需求">
-        <button class="btn btn-small btn-danger" data-remove-item>移除</button>
+        <button class="btn btn-small btn-ghost" data-remove-item>移除</button>
       </div>`;
   }
 

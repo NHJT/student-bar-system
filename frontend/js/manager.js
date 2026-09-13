@@ -383,7 +383,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <td><input type="number" step="0.01" min="0" value="${item.quantity_needed}"
                    data-field="qty" class="stock-input qty-input"></td>
         <td class="recipe-unit">${escapeHtml(unit)}</td>
-        <td><button class="btn btn-small btn-danger" data-remove-row="1">移除</button></td>
+        <td><button class="btn btn-small btn-ghost" data-remove-row="1">移除</button></td>
       </tr>`;
   }
 
