@@ -41,7 +41,11 @@ async def lifespan(app: FastAPI):
     ready = False
     try:
         with engine.connect() as conn:
-            ready = conn.execute(text("SELECT to_regclass('public.orders')")).scalar()
+            # 看 order_groups：orders 在多品項改版時已經拆掉，拿它判斷會永遠是 False，
+            # 連帶讓下面的補結算與 23:59 排程不會啟動
+            ready = conn.execute(
+                text("SELECT to_regclass('public.order_groups')")
+            ).scalar()
         if ready:
             logger.info("資料庫連線正常，資料表已就緒")
         else:

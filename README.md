@@ -17,6 +17,7 @@ backend/
   schema.sql       # 資料表結構（PostgreSQL）
   models.py        # Pydantic 模型
   seed_data.py     # 酒吧真實菜單（飲品/原料/配方），會先清空再寫入
+  update_recipes.py # 只更新原料與配方，保留訂單（營運中改配方用這支）
   inventory.py     # 配方庫存連動（下單扣料/取消退料/補貨警示）
   summary.py       # 每日結算：彙總寫進 daily_summary，原始訂單存 historical_orders
   scheduler.py     # 每天 23:59 觸發結算的排程
@@ -82,7 +83,7 @@ uvicorn backend.main:app --reload
 ## 菜單資料
 
 `backend/seed_data.py` 存的是酒吧的真實菜單：26 款調酒（依基酒分成 GIN／
-WHISKEY／VODKA／RUM／TEQUILA BASE、OTHERS、SIGNATURE）、38 項原料、116 筆配方。
+WHISKEY／VODKA／RUM／TEQUILA BASE、OTHERS、SIGNATURE）、39 項原料、93 筆配方。
 
 ```bash
 python -m backend.seed_data           # 重置菜單
@@ -93,9 +94,27 @@ python -m backend.seed_data --force   # 連同既有訂單一起清除
 再寫入。因為 `order_items` 參照 `drinks`，資料庫裡若已有訂單，腳本會中止並要求加
 `--force`，避免不小心刪掉營業資料。
 
-每杯用量是合理的起始值（基酒 0.05 瓶、利口酒 0.02 瓶、萊姆汁 0.05 瓶、
-果汁 0.1 瓶、汽水 1 罐、香草 0.2 束、冰塊 0.1 公斤、苦精 0.005 瓶），
-實際份量請在經理後台的配方管理逐項調整。
+### 營運中更新配方
+
+已經在收單、只是要改配方或原料時**不要**跑 `seed_data`，改用：
+
+```bash
+python -m backend.update_recipes --dry-run   # 先看會做哪些變更
+python -m backend.update_recipes             # 實際更新
+```
+
+它只動 `ingredients` 與 `recipes`，訂單與歷史紀錄都保留，而且可以重複執行。
+
+### 單位
+
+液體一律以 **ml** 記錄用量與庫存，不換算成瓶數。進貨時用
+`1 瓶 = 700 ml`、`1 罐 = 330 ml`（`seed_data.py` 的 `BOTTLE_ML` / `CAN_ML`）
+把數量換成 ml 填進庫存即可。非液體維持原本單位：薄荷／紫蘇以「束」、
+檸檬／蛋白以「顆」、奶蓋粉以「包」、冰塊以「公斤」。
+
+配方數字來自吧台實際出杯量。其中 Boston Sour、Clover Club 與兩款 SIGNATURE
+特調還沒拿到實際配方，`MENU` 裡標了 `TODO`，數字是舊的假設值換算成 ml，
+拿到配方後直接改 `MENU` 再跑一次 `update_recipes` 即可。
 
 售價寫在 `MENU` 裡但**尚未進資料庫**（`drinks` 表沒有 `price` 欄位），
 之後要加價格／營收功能時可直接取用。

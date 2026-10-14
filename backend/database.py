@@ -100,6 +100,10 @@ def rows_to_dicts(result) -> list[dict]:
 # 舊資料庫升級用：(資料表, 欄位, 欄位定義)
 # schema.sql 是 CREATE TABLE IF NOT EXISTS，已存在的資料表不會自動長出新欄位，
 # 所以新增欄位時要同時登記在這裡。
+#
+# 下面兩筆是為了把「多品項改版」之前的舊 orders 表讀進來才保留的
+# （_data_migrations 會從這兩個欄位搬資料）。新建的資料庫沒有 orders 這張表，
+# _migrate 會自動跳過。
 _MIGRATIONS = [
     ("orders", "edit_count", "INTEGER NOT NULL DEFAULT 0"),
     # 舊資料無從得知當初的付款時間，補上欄位後只有之後的訂單才會有值
@@ -109,6 +113,10 @@ _MIGRATIONS = [
 
 def _migrate(conn: Connection) -> None:
     for table, column, definition in _MIGRATIONS:
+        # 這些欄位是為了升級舊資料庫才留著的。新建的資料庫沒有 orders 這張表
+        # （已拆成 order_groups / order_items），ALTER 下去會直接噴 UndefinedTable。
+        if not _table_exists(conn, table):
+            continue
         exists = conn.execute(
             text(
                 "SELECT 1 FROM information_schema.columns "
