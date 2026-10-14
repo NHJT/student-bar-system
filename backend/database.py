@@ -33,8 +33,21 @@ def _database_url() -> str:
     if not url:
         raise RuntimeError(
             "缺少環境變數 DATABASE_URL。\n"
-            "本機開發可先設定，例如：\n"
-            "  export DATABASE_URL=postgresql://postgres@127.0.0.1:5432/studentbar"
+            "在執行指令的同一個視窗先設定（關掉視窗就會失效）：\n"
+            "\n"
+            "  Windows 命令提示字元 (cmd)\n"
+            "    set DATABASE_URL=postgresql://使用者:密碼@主機:連接埠/資料庫名\n"
+            "    （= 前後不要有空白、不要加引號；密碼裡的 % 要寫成 %%）\n"
+            "\n"
+            "  Windows PowerShell\n"
+            '    $env:DATABASE_URL = "postgresql://使用者:密碼@主機:連接埠/資料庫名"\n'
+            "\n"
+            "  macOS / Linux\n"
+            "    export DATABASE_URL=postgresql://postgres@127.0.0.1:5432/studentbar\n"
+            "\n"
+            "要連 Railway 上的資料庫請用「公開」連線字串（DATABASE_PUBLIC_URL，\n"
+            "主機長得像 xxx.proxy.rlwy.net），不要用 postgres.railway.internal，\n"
+            "那個名稱只有在 Railway 容器內部才解析得到。"
         )
     # Railway／Heroku 有時給的是 postgres:// 開頭，SQLAlchemy 2.x 需要完整 driver 名稱
     if url.startswith("postgres://"):

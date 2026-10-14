@@ -64,6 +64,28 @@ python init_db.py --seed        # 建立資料表並寫入菜單資料
 uvicorn backend.main:app --reload
 ```
 
+Windows 的 `set` 和 bash 的 `export` 不一樣，環境變數要這樣設（和後面的
+指令要在**同一個視窗**執行，關掉視窗就失效）：
+
+```bat
+REM 命令提示字元 (cmd)
+set DATABASE_URL=postgresql://postgres@127.0.0.1:5432/studentbar
+```
+
+```powershell
+# PowerShell
+$env:DATABASE_URL = "postgresql://postgres@127.0.0.1:5432/studentbar"
+```
+
+cmd 的 `set` 前後不要有空白、不要加引號，密碼裡若有 `%` 要寫成 `%%`。
+
+### 從自己的電腦連 Railway 的資料庫
+
+要對線上資料庫跑 `init_db.py` 或 `update_recipes` 時，`DATABASE_URL` 要填
+Railway Postgres 服務的**公開**連線字串 `DATABASE_PUBLIC_URL`（主機長得像
+`xxx.proxy.rlwy.net`）。`postgres.railway.internal` 只有在 Railway 的容器
+內部才解析得到，從自己的電腦連會失敗。
+
 打開 http://localhost:8000 選擇角色頁面。API 文件在 http://localhost:8000/docs。
 
 ## 部署到 Railway
