@@ -83,7 +83,7 @@ uvicorn backend.main:app --reload
 ## 菜單資料
 
 `backend/seed_data.py` 存的是酒吧的真實菜單：26 款調酒（依基酒分成 GIN／
-WHISKEY／VODKA／RUM／TEQUILA BASE、OTHERS、SIGNATURE）、39 項原料、93 筆配方。
+WHISKEY／VODKA／RUM／TEQUILA BASE、OTHERS、SIGNATURE）、40 項原料、94 筆配方。
 
 ```bash
 python -m backend.seed_data           # 重置菜單

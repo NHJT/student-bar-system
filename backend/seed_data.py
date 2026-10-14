@@ -61,7 +61,8 @@ INGREDIENTS = [
     ("紅石榴糖漿", "ml", 2 * BOTTLE_ML, 1 * BOTTLE_ML),
     ("糖漿", "ml", 6 * BOTTLE_ML, 2 * BOTTLE_ML),
     ("蜂蜜", "ml", 2 * BOTTLE_ML, 1 * BOTTLE_ML),
-    ("苦精", "ml", 2 * BOTTLE_ML, 1 * BOTTLE_ML),
+    ("苦精", "ml", 2 * BOTTLE_ML, 1 * BOTTLE_ML),  # Angostura
+    ("橘子苦精", "ml", 2 * BOTTLE_ML, 1 * BOTTLE_ML),  # Orange Bitters
     # 果汁（「酸」＝萊姆汁＋檸檬汁的混合液，幾乎每杯都用到，留最多）
     ("酸", "ml", 10 * BOTTLE_ML, 3 * BOTTLE_ML),
     ("檸檬汁", "ml", 3 * BOTTLE_ML, 1 * BOTTLE_ML),
@@ -126,8 +127,9 @@ MENU = [
      [("波本威士忌", 35), ("糖漿", 14), ("酸", 35), ("蛋白", 1), ("冰塊", 0.1)]),
     ("God Father", "WHISKEY BASE", 200,
      [("蘇格蘭威士忌", 50), ("杏仁利口酒", 15)]),
+    # 苦精 7 dash ≒ 2 ml、橘子苦精 3 drop ≒ 1 ml
     ("Old-Fashioned", "WHISKEY BASE", 180,
-     [("波本威士忌", 60), ("糖漿", 10), ("苦精", 2)]),  # 苦精 7 dash ≒ 2 ml
+     [("波本威士忌", 60), ("糖漿", 10), ("苦精", 2), ("橘子苦精", 1)]),
     ("Highball", "WHISKEY BASE", 120,
      [("波本威士忌", 60), ("氣泡水", 60)]),
 
