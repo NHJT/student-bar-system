@@ -27,7 +27,7 @@ def get_recipe(drink_id: int, db: Connection = Depends(get_db)):
             text(
                 """
                 SELECT r.ingredient_id, i.name AS ingredient_name, i.unit,
-                       r.quantity_needed
+                       r.quantity_needed, r.note
                 FROM recipes r
                 JOIN ingredients i ON i.id = r.ingredient_id
                 WHERE r.drink_id = :drink_id
@@ -62,18 +62,36 @@ async def set_recipe(
                 status_code=404, detail=f"找不到原料 id={item.ingredient_id}"
             )
 
+    # 「換算估值」這類註記說的是「這個數字是換算來的」。經理把用量改掉之後
+    # 那句話就不成立了，所以用量有變動的列要把註記清掉，沒動到的才保留。
+    previous = {
+        row.ingredient_id: (row.quantity_needed, row.note)
+        for row in db.execute(
+            text("SELECT ingredient_id, quantity_needed, note FROM recipes "
+                 "WHERE drink_id = :id"),
+            {"id": drink_id},
+        )
+    }
+
+    def kept_note(item: RecipeItemIn) -> str | None:
+        before = previous.get(item.ingredient_id)
+        if before is None or before[0] != item.quantity_needed:
+            return None
+        return before[1]
+
     db.execute(text("DELETE FROM recipes WHERE drink_id = :id"), {"id": drink_id})
     if items:
         db.execute(
             text(
-                "INSERT INTO recipes (drink_id, ingredient_id, quantity_needed) "
-                "VALUES (:drink_id, :ingredient_id, :quantity_needed)"
+                "INSERT INTO recipes (drink_id, ingredient_id, quantity_needed, note) "
+                "VALUES (:drink_id, :ingredient_id, :quantity_needed, :note)"
             ),
             [
                 {
                     "drink_id": drink_id,
                     "ingredient_id": item.ingredient_id,
                     "quantity_needed": item.quantity_needed,
+                    "note": kept_note(item),
                 }
                 for item in items
             ],

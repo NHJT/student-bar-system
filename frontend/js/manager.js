@@ -383,6 +383,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <td><input type="number" step="0.01" min="0" value="${item.quantity_needed}"
                    data-field="qty" class="stock-input qty-input"></td>
         <td class="recipe-unit">${escapeHtml(unit)}</td>
+        <td class="recipe-note">${item.note ? escapeHtml(item.note) : ""}</td>
         <td><button class="btn btn-small btn-ghost" data-remove-row="1">移除</button></td>
       </tr>`;
   }
@@ -390,7 +391,7 @@ document.addEventListener("DOMContentLoaded", () => {
   async function loadRecipe() {
     const drinkId = recipeSelect.value;
     if (!drinkId) {
-      recipeBody.innerHTML = '<tr><td colspan="4" class="placeholder">請先選擇飲品</td></tr>';
+      recipeBody.innerHTML = '<tr><td colspan="5" class="placeholder">請先選擇飲品</td></tr>';
       return;
     }
     const [items, ingredients] = await Promise.all([
@@ -399,12 +400,12 @@ document.addEventListener("DOMContentLoaded", () => {
     ]);
     allIngredients = ingredients;
     if (ingredients.length === 0) {
-      recipeBody.innerHTML = '<tr><td colspan="4" class="placeholder">請先建立原料</td></tr>';
+      recipeBody.innerHTML = '<tr><td colspan="5" class="placeholder">請先建立原料</td></tr>';
       return;
     }
     recipeBody.innerHTML = items.length
       ? items.map((it) => recipeRow(it, ingredients)).join("")
-      : '<tr><td colspan="4" class="placeholder">這杯飲品目前不需要原料</td></tr>';
+      : '<tr><td colspan="5" class="placeholder">這杯飲品目前不需要原料</td></tr>';
     recipeHint.textContent = "";
   }
 
@@ -432,7 +433,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!e.target.closest("[data-remove-row]")) return;
     e.target.closest("tr").remove();
     if (!recipeBody.querySelector("[data-recipe-row]")) {
-      recipeBody.innerHTML = '<tr><td colspan="4" class="placeholder">這杯飲品目前不需要原料</td></tr>';
+      recipeBody.innerHTML = '<tr><td colspan="5" class="placeholder">這杯飲品目前不需要原料</td></tr>';
     }
   });
 

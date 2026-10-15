@@ -121,6 +121,8 @@ _MIGRATIONS = [
     ("orders", "edit_count", "INTEGER NOT NULL DEFAULT 0"),
     # 舊資料無從得知當初的付款時間，補上欄位後只有之後的訂單才會有值
     ("orders", "payment_completed_at", "TIMESTAMPTZ"),
+    # 配方數字的來源註記（換算估值 vs 酒譜原始數字）
+    ("recipes", "note", "TEXT"),
 ]
 
 

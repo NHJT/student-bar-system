@@ -20,7 +20,14 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from backend.database import engine, init_db
-from backend.seed_data import BOTTLE_ML, CAN_ML, INGREDIENTS, MENU
+from backend.seed_data import (
+    BOTTLE_ML,
+    CAN_ML,
+    EGG_WHITE_ML,
+    INGREDIENTS,
+    MENU,
+    normalized_items,
+)
 
 # 原料更名：(舊名, 新名)。目標名稱已存在時會合併（配方改指新的，庫存相加）。
 RENAMES = [
@@ -31,6 +38,9 @@ RENAMES = [
 
 # 舊單位 → 一單位等於幾 ml
 UNIT_TO_ML = {"瓶": BOTTLE_ML, "罐": CAN_ML}
+
+# 「顆」沒有通用換算（檸檬 1 顆不是 30 ml），所以逐項指定，不放進 UNIT_TO_ML
+PER_INGREDIENT_ML = {"蛋白": EGG_WHITE_ML}
 
 TARGET = {name: (unit, stock, reorder) for name, unit, stock, reorder in INGREDIENTS}
 
@@ -75,15 +85,23 @@ def _rename_ingredients(conn: Connection) -> list[str]:
 
 
 def _convert_units(conn: Connection) -> list[str]:
-    """瓶／罐 → ml，庫存與補貨點一起按比例換算。已是 ml 的跳過。"""
+    """瓶／罐／顆 → ml，庫存與補貨點一起按比例換算。已是 ml 的跳過。"""
     notes = []
     rows = conn.execute(
         text("SELECT id, name, unit, current_stock, reorder_point FROM ingredients")
     ).fetchall()
     for row in rows:
         target_unit = TARGET.get(row.name, (None,))[0]
-        factor = UNIT_TO_ML.get(row.unit)
-        if target_unit != "ml" or factor is None:
+        # row.unit == "ml" 的要先擋掉，否則 PER_INGREDIENT_ML 裡的原料
+        # 每跑一次就會再乘一次
+        if target_unit != "ml" or row.unit == "ml":
+            continue
+        factor = PER_INGREDIENT_ML.get(row.name) or UNIT_TO_ML.get(row.unit)
+        if factor is None:
+            notes.append(
+                f"⚠ {row.name} 目前的單位是「{row.unit}」，沒有對應的 ml 換算，"
+                f"庫存請在後台自行改成 ml"
+            )
             continue
         conn.execute(
             text(
@@ -123,14 +141,15 @@ def _replace_recipes(conn: Connection) -> tuple[list[str], int]:
         conn.execute(text("SELECT name, id FROM ingredients")).fetchall()
     )
     written = 0
-    for drink_name, _category, _price, items in MENU:
+    for drink_name, _category, _price, raw_items in MENU:
+        items = normalized_items(raw_items)
         drink_id = conn.execute(
             text("SELECT id FROM drinks WHERE name = :n"), {"n": drink_name}
         ).scalar()
         if drink_id is None:
             notes.append(f"⚠ 酒單上找不到「{drink_name}」，配方未寫入")
             continue
-        missing = [n for n, _q in items if n not in ingredient_ids]
+        missing = [n for n, _q, _note in items if n not in ingredient_ids]
         if missing:
             notes.append(f"⚠ 「{drink_name}」用到未登記的原料 {missing}，配方未寫入")
             continue
@@ -139,16 +158,17 @@ def _replace_recipes(conn: Connection) -> tuple[list[str], int]:
         )
         conn.execute(
             text(
-                "INSERT INTO recipes (drink_id, ingredient_id, quantity_needed) "
-                "VALUES (:drink_id, :ingredient_id, :quantity_needed)"
+                "INSERT INTO recipes (drink_id, ingredient_id, quantity_needed, note) "
+                "VALUES (:drink_id, :ingredient_id, :quantity_needed, :note)"
             ),
             [
                 {
                     "drink_id": drink_id,
                     "ingredient_id": ingredient_ids[name],
                     "quantity_needed": qty,
+                    "note": note,
                 }
-                for name, qty in items
+                for name, qty, note in items
             ],
         )
         written += len(items)

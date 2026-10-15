@@ -105,7 +105,7 @@ Railway Postgres 服務的**公開**連線字串 `DATABASE_PUBLIC_URL`（主機�
 ## 菜單資料
 
 `backend/seed_data.py` 存的是酒吧的真實菜單：26 款調酒（依基酒分成 GIN／
-WHISKEY／VODKA／RUM／TEQUILA BASE、OTHERS、SIGNATURE）、40 項原料、94 筆配方。
+WHISKEY／VODKA／RUM／TEQUILA BASE、OTHERS、SIGNATURE）、41 項原料、95 筆配方。
 
 ```bash
 python -m backend.seed_data           # 重置菜單
@@ -130,12 +130,26 @@ python -m backend.update_recipes             # 實際更新
 ### 單位
 
 液體一律以 **ml** 記錄用量與庫存，不換算成瓶數。進貨時用
-`1 瓶 = 700 ml`、`1 罐 = 330 ml`（`seed_data.py` 的 `BOTTLE_ML` / `CAN_ML`）
-把數量換成 ml 填進庫存即可。非液體維持原本單位：薄荷／紫蘇以「束」、
-檸檬／蛋白以「顆」、奶蓋粉以「包」、冰塊以「公斤」。
+`1 瓶 = 700 ml`、`1 罐 = 330 ml`、`1 顆蛋白 = 30 ml`（`seed_data.py` 的
+`BOTTLE_ML` / `CAN_ML` / `EGG_WHITE_ML`）把數量換成 ml 填進庫存即可。
+非液體維持原本單位：薄荷／紫蘇以「束」、檸檬以「顆」、奶蓋粉以「包」、
+冰塊以「公斤」。
 
-配方數字來自吧台實際出杯量。其中 Boston Sour、Clover Club 與兩款 SIGNATURE
-特調還沒拿到實際配方，`MENU` 裡標了 `TODO`，數字是舊的假設值換算成 ml，
+「顆」沒有通用換算（檸檬 1 顆不是 30 ml），所以 `update_recipes.py` 的
+`PER_INGREDIENT_ML` 是逐項指定的，不要把它改成「顆 → ml」的通用規則。
+
+### 換算估值
+
+酒譜寫「1 吧匙」「7 dash」「3 drop」「top」這類非 ml 的量法時，存進資料庫的
+ml 只是估值。這種列在 `MENU` 裡用 `est("1 吧匙")` 標記，會寫進
+`recipes.note`，經理後台的配方管理有一欄「備註」顯示它。日後要校正份量，
+先看有這個註記的幾列就好。
+
+經理在後台改動某一列的用量後，那列的註記會自動清掉（數字已經不是換算來的了）；
+沒動到的列註記保留。
+
+配方數字來自吧台實際出杯量。其中 Boston Sour 與兩款 SIGNATURE 特調還沒拿到
+實際配方，`MENU` 裡標了 `TODO`，數字是舊的假設值換算成 ml，
 拿到配方後直接改 `MENU` 再跑一次 `update_recipes` 即可。
 
 售價寫在 `MENU` 裡但**尚未進資料庫**（`drinks` 表沒有 `price` 欄位），

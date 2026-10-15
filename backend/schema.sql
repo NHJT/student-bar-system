@@ -22,6 +22,10 @@ CREATE TABLE IF NOT EXISTS recipes (
     drink_id        INTEGER          NOT NULL REFERENCES drinks (id) ON DELETE CASCADE,
     ingredient_id   INTEGER          NOT NULL REFERENCES ingredients (id) ON DELETE CASCADE,
     quantity_needed DOUBLE PRECISION NOT NULL,
+    -- 這個數字的來源。酒譜本來就寫 ml 的留空；由吧匙／dash／drop／top 之類
+    -- 非 ml 的寫法換算來的，標成「換算估值（原酒譜：1 吧匙）」，
+    -- 日後要校正份量時才知道哪些數字本來就不精確
+    note            TEXT,
     PRIMARY KEY (drink_id, ingredient_id)
 );
 

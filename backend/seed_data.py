@@ -25,9 +25,11 @@ from sqlalchemy import text
 
 from backend.database import engine, init_db
 
-# 進貨換算（只用來把庫存數字從瓶／罐換成 ml，用量單位本身保持 ml）
+# 進貨換算（只用來把庫存數字從瓶／罐／顆換成 ml，用量單位本身保持 ml）
 BOTTLE_ML = 700  # 一瓶基酒／利口酒／果汁／糖漿
 CAN_ML = 330  # 一罐通寧水／氣泡水／可樂／薑汁汽水
+EGG_WHITE_ML = 30  # 一顆蛋白。注意「顆」沒有通用換算（檸檬 1 顆不是 30 ml），
+#                    只有蛋白適用，所以不要把它寫成「顆 → ml」的通用規則
 
 # ---------------------------------------------------------------------------
 # 原料：(名稱, 單位, 初始庫存, 補貨點)
@@ -59,6 +61,9 @@ INGREDIENTS = [
     # 糖漿、調味
     ("覆盆子糖漿", "ml", 2 * BOTTLE_ML, 1 * BOTTLE_ML),
     ("紅石榴糖漿", "ml", 2 * BOTTLE_ML, 1 * BOTTLE_ML),
+    # 還沒進貨，庫存先掛 0；補貨點比照其他糖漿，所以在補到貨之前
+    # 經理後台的庫存警示會一直列出它（這是對的，Clover Club 現在做不出來）
+    ("玫瑰糖漿", "ml", 0, 1 * BOTTLE_ML),
     ("糖漿", "ml", 6 * BOTTLE_ML, 2 * BOTTLE_ML),
     ("蜂蜜", "ml", 2 * BOTTLE_ML, 1 * BOTTLE_ML),
     ("苦精", "ml", 2 * BOTTLE_ML, 1 * BOTTLE_ML),  # Angostura
@@ -78,16 +83,26 @@ INGREDIENTS = [
     ("薄荷", "束", 5, 2),
     ("紫蘇", "束", 5, 2),
     ("檸檬", "顆", 30, 10),
-    ("蛋白", "顆", 24, 8),
+    ("蛋白", "ml", 24 * EGG_WHITE_ML, 8 * EGG_WHITE_ML),  # 原本以「顆」計，24 顆 / 8 顆
     ("冬瓜露", "ml", 3 * BOTTLE_ML, 1 * BOTTLE_ML),
     ("奶蓋粉", "包", 5, 2),
     ("冰塊", "公斤", 30, 10),
 ]
 
+def est(original: str) -> str:
+    """標記這個 ml 數字是換算來的，不是酒譜原本就寫的 ml。
+
+    酒譜寫「1 吧匙」「7 dash」「top」這類非 ml 的量法時，存進資料庫的 ml
+    只是估值。日後要校正份量，先看有這個註記的幾列就好。
+    """
+    return f"換算估值（原酒譜：{original}）"
+
+
 # ---------------------------------------------------------------------------
-# 菜單：(飲品名稱, 分類, 售價, [(原料, 每杯用量), ...])
+# 菜單：(飲品名稱, 分類, 售價, [(原料, 每杯用量) 或 (原料, 每杯用量, 註記), ...])
 #
-# 用量單位是該原料的 unit（液體皆為 ml）。以下配方為吧台提供的實際數字。
+# 用量單位是該原料的 unit（液體皆為 ml）。以下配方為吧台提供的實際數字，
+# 由非 ml 量法換算來的用 est() 標成「換算估值」。
 # 售價目前沒有寫進資料庫（drinks 表沒有 price 欄位），先保留在這裡，
 # 之後要加價格／營收功能時可直接使用。
 #
@@ -102,7 +117,7 @@ INGREDIENTS = [
 MENU = [
     # ---- GIN BASE ----
     ("Gin Fizz", "GIN BASE", 180,
-     [("琴酒", 50), ("糖漿", 15), ("酸", 15), ("氣泡水", 60)]),
+     [("琴酒", 50), ("糖漿", 15), ("酸", 15), ("氣泡水", 60, est("top"))]),
     ("Gin Tonic", "GIN BASE", 120,
      [("琴酒", 60), ("通寧水", 95)]),
     ("Gimlet", "GIN BASE", 150,
@@ -115,21 +130,25 @@ MENU = [
      [("琴酒", 45), ("白可可利口酒", 15), ("Lillet", 20), ("酸", 20)]),
     ("Aviation", "GIN BASE", 200,
      [("琴酒", 50), ("黑櫻桃酒", 12), ("紫羅蘭酒", 7), ("酸", 17)]),
-    ("Clover Club", "GIN BASE", 200,  # TODO 尚未取得實際配方
-     [("琴酒", 35), ("酸", 35), ("覆盆子糖漿", 14), ("蛋白", 1), ("冰塊", 0.1)]),
+    ("Clover Club", "GIN BASE", 200,
+     [("琴酒", 45), ("酸", 15), ("覆盆子糖漿", 15),
+      ("玫瑰糖漿", 5, est("1 吧匙")), ("蛋白", 20), ("苦精", 1, est("3 drop"))]),
     ("Negroni", "GIN BASE", 220,
      [("琴酒", 45), ("Campari", 17), ("甜苦艾酒", 23)]),
 
     # ---- WHISKEY BASE ----
     ("Whiskey Sour", "WHISKEY BASE", 150,
      [("波本威士忌", 60), ("糖漿", 10), ("酸", 15)]),
-    ("Boston Sour", "WHISKEY BASE", 180,  # TODO 尚未取得實際配方
-     [("波本威士忌", 35), ("糖漿", 14), ("酸", 35), ("蛋白", 1), ("冰塊", 0.1)]),
+    # TODO 尚未取得實際配方。蛋白的單位從「顆」改成 ml 之後，這裡的 1 顆
+    # 跟著換算成 30 ml，維持原本的假設份量（不換算的話 1 會變成 1 ml）
+    ("Boston Sour", "WHISKEY BASE", 180,
+     [("波本威士忌", 35), ("糖漿", 14), ("酸", 35),
+      ("蛋白", 30, est("1 顆")), ("冰塊", 0.1)]),
     ("God Father", "WHISKEY BASE", 200,
      [("蘇格蘭威士忌", 50), ("杏仁利口酒", 15)]),
-    # 苦精 7 dash ≒ 2 ml、橘子苦精 3 drop ≒ 1 ml
     ("Old-Fashioned", "WHISKEY BASE", 180,
-     [("波本威士忌", 60), ("糖漿", 10), ("苦精", 2), ("橘子苦精", 1)]),
+     [("波本威士忌", 60), ("糖漿", 10),
+      ("苦精", 2, est("7 dash")), ("橘子苦精", 1, est("3 drop"))]),
     ("Highball", "WHISKEY BASE", 120,
      [("波本威士忌", 60), ("氣泡水", 60)]),
 
@@ -155,12 +174,13 @@ MENU = [
     ("Margarita", "TEQUILA BASE", 180,
      [("龍舌蘭酒", 43), ("君度橙酒", 20), ("酸", 16)]),
     ("El Diablo", "TEQUILA BASE", 200,
-     [("龍舌蘭酒", 40), ("黑醋栗利口酒", 15), ("酸", 15), ("薑汁汽水", 60)]),
+     [("龍舌蘭酒", 40), ("黑醋栗利口酒", 15), ("酸", 15),
+      ("薑汁汽水", 60, est("top"))]),
 
     # ---- OTHERS ----
     ("Long Island Iced Tea", "OTHERS", 250,
      [("伏特加", 15), ("琴酒", 15), ("蘭姆酒", 15), ("龍舌蘭酒", 10),
-      ("君度橙酒", 10), ("酸", 15), ("可樂", 80)]),
+      ("君度橙酒", 10), ("酸", 15), ("可樂", 80, est("top"))]),
 
     # ---- SIGNATURE（本週特調，之後會定期更換）----
     ("雨後夏夜 Summer Night After Rain", "SIGNATURE", 250,  # TODO 尚未取得實際配方
@@ -169,6 +189,11 @@ MENU = [
     ("冬瓜奶蓋 Whitemelon", "SIGNATURE", 250,  # TODO 尚未取得實際配方
      [("波本威士忌", 35), ("冬瓜露", 70), ("奶蓋粉", 0.1), ("冰塊", 0.1)]),
 ]
+
+
+def normalized_items(items) -> list[tuple[str, float, str | None]]:
+    """把 MENU 裡的配方列統一成 (原料, 用量, 註記)，沒寫註記的補 None。"""
+    return [(it[0], it[1], it[2] if len(it) > 2 else None) for it in items]
 
 
 class SeedAborted(RuntimeError):
@@ -218,7 +243,7 @@ def seed(force: bool = False) -> None:
                 ),
                 {"name": drink_name, "category": category},
             ).scalar_one()
-            for ingredient_name, qty in items:
+            for ingredient_name, qty, note in normalized_items(items):
                 if ingredient_name not in ingredient_ids:
                     raise SeedAborted(
                         f"「{drink_name}」的配方用到未登記的原料：{ingredient_name}"
@@ -228,13 +253,14 @@ def seed(force: bool = False) -> None:
                         "drink_id": drink_id,
                         "ingredient_id": ingredient_ids[ingredient_name],
                         "quantity_needed": qty,
+                        "note": note,
                     }
                 )
 
         conn.execute(
             text(
-                "INSERT INTO recipes (drink_id, ingredient_id, quantity_needed) "
-                "VALUES (:drink_id, :ingredient_id, :quantity_needed)"
+                "INSERT INTO recipes (drink_id, ingredient_id, quantity_needed, note) "
+                "VALUES (:drink_id, :ingredient_id, :quantity_needed, :note)"
             ),
             recipe_rows,
         )
