@@ -88,6 +88,7 @@ form input, form select,
   height: 2.75rem; box-sizing: border-box;
 }
 
+
 /* 數量加減器：手機也好按的大按鈕，最小值 1。
    寬度收斂，兩顆按鈕不要離太遠，單手拇指構得到 */
 .stepper {
@@ -230,7 +231,29 @@ form input, form select,
 .sound-hint { font-size: .8rem; color: var(--warning); margin-right: .75rem; }
 .queue-col h2 small { color: var(--muted); font-weight: 400; font-size: .75rem; }
 
-/* 服務生頁的待送達區：置頂、滿版，手機一開頁就看得到不用捲動 */
+/* 服務生頁版面：
+   電腦 ─ 左邊整欄是點餐，右欄上為待送達、下為本場訂單／付款
+   手機 ─ 單欄，待送達排最前面（DOM 順序就是手機順序）
+   點餐欄跨兩列，所以右欄兩塊各自依內容高度排列。 */
+.waiter-layout {
+  display: grid; gap: 1rem; padding: 1rem;
+  grid-template-columns: 1fr 1fr;
+  grid-template-areas:
+    "order deliver"
+    "order paylist";
+  align-items: start;
+}
+.waiter-layout .deliver-panel { grid-area: deliver; }
+.waiter-layout .panel-order   { grid-area: order; }
+.waiter-layout .panel-paylist { grid-area: paylist; }
+@media (max-width: 900px) {
+  .waiter-layout {
+    grid-template-columns: 1fr;
+    grid-template-areas: "deliver" "order" "paylist";
+  }
+}
+
+/* 服務生頁的待送達區：置頂，手機一開頁就看得到不用捲動 */
 .deliver-panel h2 {
   display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
 }
@@ -252,6 +275,28 @@ form input, form select,
 .order-queue li[data-id]:hover { border-color: var(--primary); }
 
 .order-row { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+
+/* 本場訂單／付款：版面讓給還要處理的訂單，所以整欄收緊 */
+.pay-count { color: var(--muted); font-weight: 400; font-size: .8rem; }
+.order-list.compact li { padding: .5rem .6rem; margin-bottom: .35rem; }
+.order-list.compact .order-item-line { font-size: .82rem; margin-top: .25rem; }
+/* 未付款是這一欄的重點，左邊給一道標示條 */
+.order-list.compact li.order-unpaid { border-left: 3px solid var(--primary); }
+
+/* 已付款又已送達的訂單：預設縮成一行，點整行展開品項 */
+.order-list.compact li.order-settled { padding: 0; background: #fbfcfe; }
+.settled-row {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  width: 100%; padding: .4rem .6rem;
+  background: none; border: none; font: inherit; color: var(--muted);
+  text-align: left; cursor: pointer;
+}
+.settled-row:hover { color: var(--text); }
+.settled-row strong { color: var(--text); font-size: .9rem; }
+.settled-caret { color: var(--muted); font-size: .7rem; }
+.order-list.compact li.order-settled .order-item-line {
+  padding: 0 .6rem .4rem 1.6rem;
+}
 .order-time { color: var(--muted); font-size: .8rem; margin-left: auto; }
 .order-note { margin-top: .35rem; font-size: .85rem; color: var(--muted); }
 .card-action { margin-top: .5rem; font-size: .85rem; color: var(--primary); text-align: right; }
@@ -421,3 +466,19 @@ th { color: var(--muted); font-weight: 600; }
 }
 
 .panel h2:not(:first-child) { margin-top: 1.25rem; }
+
+/* ---------- 下拉選單定位修正（必須放在所有 select 規則之後） ----------
+   原生下拉選單的彈出清單，對齊的是 <select> 的「內容區」而不是外框，
+   所以 select 只要有上下 padding，展開的清單就會往下偏那段距離。
+   桌號選單最明顯：外框 44px 裡只有 26px 內容區，上下各 8px 就是偏移量。
+   修法是把上下 padding 歸零、改用 height 撐出一樣的外框，左右 padding 保留。
+   仍然是原生 <select>，沒有自製任何選單元件。 */
+form select, .field select, .edit-item select, .edit-form select,
+.recipe-picker select, select.stock-input {
+  padding-block: 0;
+}
+/* padding 歸零後，原本靠 padding 撐高的要用 height 補回原本的外框高度 */
+.recipe-picker select, .edit-form select { height: 2.25rem; }
+/* 修改訂單那一列的欄位高度一起對齊（原本 select 比 input 高 2px） */
+.edit-item select, .edit-item input { height: 2.25rem; }
+.stock-input { height: 1.875rem; }

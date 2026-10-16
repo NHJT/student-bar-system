@@ -25,6 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const orderList = document.getElementById("order-list");
   const deliverList = document.getElementById("queue-completed");
   const deliverCount = document.getElementById("deliver-count");
+  const unpaidCount = document.getElementById("unpaid-count");
 
   let availableDrinks = []; // 供修改表單重建下拉選單
   let cart = []; // 本次訂單的品項：{drink_id, drink_name, quantity, special_request}
@@ -32,6 +33,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let editingId = null; // 正在編輯中的訂單 id
   let pendingRefresh = false; // 編輯期間收到的更新，等編輯結束再套用
   const expandedDeliver = new Set(); // 待送達卡片展開狀態，重繪後要保持
+  const expandedSettled = new Set(); // 已結清訂單被點開的，重繪後要保持
   const alerted = new Set(); // 已經跳過超時提醒的訂單，key = 訂單id:狀態
 
   setupAudioUnlock();
@@ -312,10 +314,33 @@ document.addEventListener("DOMContentLoaded", () => {
       .join("");
   }
 
+  // 收完錢又送達的訂單已經沒有要處理的事，縮成一行，點一下才展開品項，
+  // 把版面留給還需要注意的訂單
+  function isSettled(o) {
+    return o.payment_status === "paid" && o.status === "delivered";
+  }
+
+  function settledRow(o) {
+    const open = expandedSettled.has(o.id);
+    return `
+      <li data-order="${o.id}" class="order-settled ${open ? "open" : ""}">
+        <button class="settled-row" data-toggle-settled="${o.id}"
+                aria-expanded="${open}">
+          <span class="settled-caret">${open ? "▴" : "▾"}</span>
+          <strong>${escapeHtml(tableLabel(o.table_number))}</strong>
+          <span class="order-summary">${o.total_quantity} 杯</span>
+          <span class="badge badge-paid">已付款</span>
+          <span class="order-time">${formatTime(o.placed_at)}</span>
+        </button>
+        ${open ? itemLines(o) : ""}
+      </li>`;
+  }
+
   function orderRow(o) {
+    if (isSettled(o)) return settledRow(o);
     const editable = o.status === "new"; // 進入製作後就不能改了
     return `
-      <li data-order="${o.id}">
+      <li data-order="${o.id}" class="${o.payment_status === "unpaid" ? "order-unpaid" : ""}">
         <div class="order-row">
           <strong>${escapeHtml(tableLabel(o.table_number))}</strong>
           <span class="order-summary">${o.item_count} 品項 / ${o.total_quantity} 杯</span>
@@ -375,9 +400,16 @@ document.addEventListener("DOMContentLoaded", () => {
       pendingRefresh = true;
       return;
     }
-    const active = orders.filter((o) => o.status !== "cancelled").reverse(); // 新的在上面
-    orderList.innerHTML = active.length
-      ? active.map(orderRow).join("")
+    const active = orders.filter((o) => o.status !== "cancelled");
+    // 未付款的排最上面（這一欄的重點是收錢），同一組裡新的在前
+    const sorted = active.sort((a, b) => {
+      const rank = (o) => (o.payment_status === "unpaid" ? 0 : 1);
+      return rank(a) - rank(b) || b.id - a.id;
+    });
+    const unpaid = active.filter((o) => o.payment_status === "unpaid").length;
+    unpaidCount.textContent = unpaid ? `${unpaid} 筆未付款` : "全部已收款 ✓";
+    orderList.innerHTML = sorted.length
+      ? sorted.map(orderRow).join("")
       : '<li class="placeholder">尚無訂單</li>';
   }
 
@@ -402,7 +434,16 @@ document.addEventListener("DOMContentLoaded", () => {
   orderList.addEventListener("click", async (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
-    const { pay, edit, cancel, save, discard, addItem, removeItem } = btn.dataset;
+    const { pay, edit, cancel, save, discard, addItem, removeItem,
+            toggleSettled } = btn.dataset;
+
+    // 已結清訂單的展開／收合只影響畫面
+    if (toggleSettled !== undefined) {
+      const id = Number(toggleSettled);
+      expandedSettled.has(id) ? expandedSettled.delete(id) : expandedSettled.add(id);
+      await refreshOrders();
+      return;
+    }
 
     // 編輯表單內的加／減品項只動畫面，不打 API
     if (addItem !== undefined) {

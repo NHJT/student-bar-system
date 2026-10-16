@@ -15,9 +15,10 @@
     </span>
   </header>
 
-  <!-- 待送達：吧台一按「完成」就會即時出現在這裡。
-       放在最上面，手機一開啟就看得到，不用捲動 -->
-  <main class="layout-one-col">
+  <!-- 版面：電腦左邊點餐，右邊上為待送達、下為本場訂單；
+       手機單欄時待送達排最前面（DOM 順序就是手機順序，不靠 order 硬搬） -->
+  <main class="waiter-layout">
+    <!-- 待送達：吧台一按「完成」就會即時出現在這裡 -->
     <section class="panel deliver-panel" id="deliver-panel">
       <h2>
         🚚 待送達
@@ -26,11 +27,9 @@
       </h2>
       <ul id="queue-completed" class="order-queue"></ul>
     </section>
-  </main>
 
-  <main class="layout-two-col">
     <!-- 點餐區：先把品項一項一項加進本次訂單，最後整張送出 -->
-    <section class="panel">
+    <section class="panel panel-order">
       <h2>點餐</h2>
       <label class="field">桌號
         <select id="table-number" required></select>
@@ -70,10 +69,11 @@
       </div>
     </section>
 
-    <!-- 訂單與付款區（第三步實作） -->
-    <section class="panel">
-      <h2>本場訂單／付款</h2>
-      <ul id="order-list" class="order-list">
+    <!-- 訂單與付款區：重點是付款狀態，未付款排最上面，
+         已付款且已送達的縮成一行，點一下才展開品項 -->
+    <section class="panel panel-paylist">
+      <h2>本場訂單／付款 <small id="unpaid-count" class="pay-count"></small></h2>
+      <ul id="order-list" class="order-list compact">
         <li class="placeholder">尚無訂單</li>
       </ul>
     </section>
