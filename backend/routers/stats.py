@@ -10,9 +10,9 @@ router = APIRouter(prefix="/api/stats", tags=["stats"])
 
 # 三段式 Andon 門檻（分鐘），與前端 common.js 的 ANDON_THRESHOLDS 一致
 ANDON_THRESHOLDS = {
-    "new": 5,  # 未開始製作
+    "new": 20,  # 未開始製作
     "preparing": 10,  # 製作中
-    "completed": 3,  # 完成後未送達
+    "completed": 10,  # 完成後未送達
 }
 
 # 連線的 session timezone 已設為 APP_TIMEZONE，所以這裡的日期比較就是「當地日期」

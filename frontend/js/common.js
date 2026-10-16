@@ -54,9 +54,9 @@ function tableLabel(value) {
 
 // 三段式 Andon 超時門檻（分鐘）——與後端 stats.py 的 ANDON_THRESHOLDS 一致
 const ANDON_THRESHOLDS = {
-  new: 5, // 未開始製作
+  new: 20, // 未開始製作
   preparing: 10, // 製作中
-  completed: 3, // 完成後未送達
+  completed: 10, // 完成後未送達
 };
 
 // Andon 計時基準：各狀態從「進入該狀態」的時間開始算
