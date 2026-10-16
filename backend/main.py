@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from backend import scheduler, summary
-from backend.database import engine
+from backend.database import engine, pending_migrations
 from backend.routers import drinks, history, ingredients, orders, recipes, stats
 from backend.ws import manager
 
@@ -48,6 +48,11 @@ async def lifespan(app: FastAPI):
             ).scalar()
         if ready:
             logger.info("資料庫連線正常，資料表已就緒")
+            # 程式已經更新、但資料庫還沒跑 init_db.py 的話，問題只會在使用者
+            # 送出「吧台」這種文字桌號時才以 500 爆出來，從畫面上看不出原因。
+            # 啟動時就把它講清楚。
+            for note in pending_migrations():
+                logger.warning("資料庫結構待升級：%s，請執行: python init_db.py", note)
         else:
             logger.warning("資料庫連線正常，但找不到資料表，請執行: python init_db.py --seed")
     except Exception as exc:

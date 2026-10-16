@@ -175,6 +175,26 @@ def _column_type(conn: Connection, table: str, column: str) -> str | None:
     ).scalar()
 
 
+#: 桌號欄位還停在數字型別時，存不下「吧台」「站位」「外帶」
+_TEXT_SEAT_TABLES = ("order_groups", "historical_orders")
+_INT_TYPES = ("integer", "bigint", "smallint")
+
+
+def pending_migrations() -> list[str]:
+    """回報資料庫結構落後於程式的地方（唯讀，啟動時用來提醒）。"""
+    notes = []
+    try:
+        with engine.connect() as conn:
+            for table in _TEXT_SEAT_TABLES:
+                if _table_exists(conn, table) and _column_type(
+                    conn, table, "table_number"
+                ) in _INT_TYPES:
+                    notes.append(f"{table}.table_number 還是數字，存不下「吧台」等文字桌號")
+    except Exception:  # 連不上資料庫時交給呼叫端既有的錯誤處理
+        return []
+    return notes
+
+
 def _data_migrations(conn: Connection) -> list[str]:
     """結構改變時搬移既有資料。每一段都可重複執行。"""
     done = []
@@ -182,12 +202,10 @@ def _data_migrations(conn: Connection) -> list[str]:
     # 桌號改成文字，才存得下「吧台」「站位」。
     # 既有的數字會原樣轉成字串（5 → '5'），不會遺失也不會補零；
     # table_number 上沒有索引、外鍵或 view，所以只是單純的欄位型別轉換。
-    for table in ("order_groups", "historical_orders"):
-        if _table_exists(conn, table) and _column_type(conn, table, "table_number") in (
-            "integer",
-            "bigint",
-            "smallint",
-        ):
+    for table in _TEXT_SEAT_TABLES:
+        if _table_exists(conn, table) and _column_type(
+            conn, table, "table_number"
+        ) in _INT_TYPES:
             rows = conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
             conn.execute(
                 text(

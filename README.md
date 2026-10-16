@@ -203,10 +203,16 @@ ml 只是估值。這種列在 `MENU` 裡用 `est("1 吧匙")` 標記，會寫�
 
 ### 桌號
 
-桌號在資料庫裡是**文字**不是數字，因為除了「1」~「13」還要能存「吧台」「站位」
-（兩者排在桌 1 之前）。顯示時用 `common.js` 的 `tableLabel()`：純數字加「桌」字，
-其餘原樣輸出。要增減桌次改 `common.js` 的 `TABLE_COUNT` 與 `NON_TABLE_SEATS` 即可，
-後端只檢查非空與長度，不寫死允許清單。
+桌號在資料庫裡是**文字**不是數字，因為除了「1」~「13」還要能存
+「吧台」「站位」「外帶」（三者依序排在桌 1 之前）。顯示時用 `common.js` 的
+`tableLabel()`：純數字加「桌」字，其餘原樣輸出。要增減選項改 `common.js` 的
+`TABLE_COUNT` 與 `NON_TABLE_SEATS` 即可，後端只檢查非空與長度，不寫死允許清單。
+
+`daily_summary` 沒有桌號欄位（只存當日彙總），不受影響。
+
+⚠️ 程式更新後**一定要跑 `python init_db.py`**：資料庫的 `table_number` 還停在
+INTEGER 時，送出文字桌號會在 INSERT 時拋 `InvalidTextRepresentation` 變成 500。
+沒跑遷移的話，服務啟動時會在 log 印出「資料庫結構待升級」警告。
 
 訂單狀態流：`new → preparing → completed → delivered`（可 `cancelled`）；付款：`unpaid → paid`。
 訂單只有在 `new` 階段可以修改或取消，取消時食材會退回庫存。

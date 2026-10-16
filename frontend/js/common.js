@@ -15,7 +15,7 @@ const STATUS_LABELS = {
 const TABLE_COUNT = 13;
 
 // 不是桌子的出餐位置，排在桌 1 之前。桌號在資料庫裡是文字，直接存這些字
-const NON_TABLE_SEATS = ["吧台", "站位"];
+const NON_TABLE_SEATS = ["吧台", "站位", "外帶"];
 
 // 點餐選單用的完整桌號清單
 function tableOptions() {
