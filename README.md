@@ -11,6 +11,7 @@ Python + FastAPI + PostgreSQL 後端，原生 HTML/CSS/JavaScript 前端，WebSo
 Procfile           # Railway/Heroku 啟動指令
 railway.toml       # Railway 部署設定
 init_db.py         # 部署後手動執行的資料表初始化腳本
+cleanup_test_data.py # 一次性：清除測試訂單與測試日期的歷史資料（預設只預覽）
 backend/
   main.py          # FastAPI 進入點（含 WebSocket 端點、靜態檔掛載）
   database.py      # SQLAlchemy 連線（讀 DATABASE_URL）與資料表初始化
