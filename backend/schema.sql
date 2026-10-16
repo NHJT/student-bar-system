@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS recipes (
 -- 訂單狀態一律取「最落後的品項」，全部做完才算完成。
 CREATE TABLE IF NOT EXISTS order_groups (
     id              SERIAL      PRIMARY KEY,
-    table_number    INTEGER     NOT NULL,
+    -- 文字而非數字：除了「1」~「13」，還要能存「吧台」「站位」
+    table_number    TEXT        NOT NULL,
     status          TEXT        NOT NULL DEFAULT 'new'
                     CHECK (status IN ('new', 'preparing', 'completed', 'delivered', 'cancelled')),
     payment_status  TEXT        NOT NULL DEFAULT 'unpaid'
@@ -84,7 +85,7 @@ CREATE TABLE IF NOT EXISTS daily_summary (
 CREATE TABLE IF NOT EXISTS historical_orders (
     business_date        DATE        NOT NULL,
     order_id             INTEGER     NOT NULL,  -- order_groups.id
-    table_number         INTEGER     NOT NULL,
+    table_number         TEXT        NOT NULL,
     items                TEXT        NOT NULL,  -- 例: "Negroni x2 | Gin Tonic x1"
     item_count           INTEGER     NOT NULL,  -- 品項數
     quantity             INTEGER     NOT NULL,  -- 總杯數

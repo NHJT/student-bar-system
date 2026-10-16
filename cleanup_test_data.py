@@ -180,7 +180,9 @@ def report(plan: dict) -> None:
         print("     （沒有符合的訂單）")
     for o in orders:
         when = o["placed_at"].strftime("%Y-%m-%d %H:%M")
-        print(f"     #{o['id']:<5} 桌 {o['table_number']:<3} {when}  {o['status']:<10} {o['items']}")
+        seat = o["table_number"]
+        seat = f"桌 {seat}" if str(seat).isdigit() else str(seat)  # 吧台／站位不加「桌」
+        print(f"     #{o['id']:<5} {seat:<6} {when}  {o['status']:<10} {o['items']}")
         print(f"            特殊需求：{o['marks']}")
     print(f"     小計 order_groups {len(orders)} 筆 / order_items {plan['order_items']} 筆")
 

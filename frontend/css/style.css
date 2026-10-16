@@ -230,6 +230,18 @@ form input, form select,
 .sound-hint { font-size: .8rem; color: var(--warning); margin-right: .75rem; }
 .queue-col h2 small { color: var(--muted); font-weight: 400; font-size: .75rem; }
 
+/* 服務生頁的待送達區：置頂、滿版，手機一開頁就看得到不用捲動 */
+.deliver-panel h2 {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+}
+.deliver-panel h2 small { color: var(--muted); font-weight: 400; font-size: .75rem; }
+/* 待送達張數徽章；沒有待送達時由 JS 加 hidden 藏起來 */
+.count-badge {
+  background: var(--primary); color: #fff;
+  min-width: 1.6rem; padding: .1rem .45rem; border-radius: 999px;
+  font-size: .85rem; font-weight: 700; text-align: center;
+}
+
 /* ---------- 訂單清單 / 佇列 ---------- */
 .order-list, .order-queue, .alert-list { list-style: none; }
 .order-queue li, .order-list li {

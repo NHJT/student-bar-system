@@ -14,6 +14,23 @@ const STATUS_LABELS = {
 // 店內桌數：桌號 1 ~ TABLE_COUNT，全部都是一般桌
 const TABLE_COUNT = 13;
 
+// 不是桌子的出餐位置，排在桌 1 之前。桌號在資料庫裡是文字，直接存這些字
+const NON_TABLE_SEATS = ["吧台", "站位"];
+
+// 點餐選單用的完整桌號清單
+function tableOptions() {
+  return [
+    ...NON_TABLE_SEATS,
+    ...Array.from({ length: TABLE_COUNT }, (_, i) => String(i + 1)),
+  ];
+}
+
+// 桌號顯示：數字要加「桌」字，吧台／站位本身就是名稱，不加
+function tableLabel(value) {
+  const text = String(value ?? "");
+  return /^\d+$/.test(text) ? `桌 ${text}` : text;
+}
+
 // 三段式 Andon 超時門檻（分鐘）——與後端 stats.py 的 ANDON_THRESHOLDS 一致
 const ANDON_THRESHOLDS = {
   new: 5, // 未開始製作
@@ -42,6 +59,76 @@ function orderAndonState(order) {
   const field = ANDON_REF_FIELD[order.status];
   if (!field) return null;
   return andonState(order.status, order[field] ?? order.placed_at);
+}
+
+// ---------- Andon 警示音（Web Audio 產生嗶聲，不需外部音檔）----------
+// 吧台頁與服務生頁共用：吧台管「未開始」「製作中」，服務生管「待送達」
+let audioCtx = null;
+
+function ensureAudio() {
+  if (!audioCtx) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    audioCtx = new Ctx();
+  }
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  return audioCtx;
+}
+
+function playAlarm(beeps = 3) {
+  const ctx = ensureAudio();
+  if (!ctx || ctx.state !== "running") return false;
+  for (let i = 0; i < beeps; i++) {
+    const start = ctx.currentTime + i * 0.28;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "square";
+    osc.frequency.value = 880;
+    // 淡入淡出，避免爆音
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(0.25, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.2);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + 0.22);
+  }
+  return true;
+}
+
+// 瀏覽器要求先有使用者互動才能播音；第一次點擊時解鎖並隱藏提示
+function setupAudioUnlock(hintId = "sound-hint") {
+  const hint = document.getElementById(hintId);
+  const unlock = () => {
+    const ctx = ensureAudio();
+    if (ctx && ctx.state === "running" && hint) hint.hidden = true;
+  };
+  document.addEventListener("click", unlock, { once: true });
+  document.addEventListener("keydown", unlock, { once: true });
+}
+
+// Andon 跳出視窗。回傳 showModal(items)，items 為 {table, summary, reason}
+function setupAndonModal(modalId = "andon-modal") {
+  const modal = document.getElementById(modalId);
+  if (!modal) return () => {};
+  const body = modal.querySelector(".alert-list");
+  modal.querySelector("[data-modal-close]")?.addEventListener("click", () => {
+    modal.hidden = true;
+  });
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.hidden = true; // 點背景關閉
+  });
+  return (items) => {
+    body.innerHTML = items
+      .map(
+        (it) => `
+        <li class="overdue-item">
+          <strong>${escapeHtml(tableLabel(it.table))} ・ ${escapeHtml(it.summary)}</strong>
+          <div class="modal-reason">${escapeHtml(it.reason)}</div>
+        </li>`
+      )
+      .join("");
+    modal.hidden = false;
+  };
 }
 
 async function apiGet(path) {

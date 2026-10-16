@@ -1,8 +1,16 @@
 """Pydantic 資料模型（API 的請求 / 回應格式）。"""
 
-from typing import Optional
+from typing import Annotated, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, StringConstraints
+
+
+# 桌號是文字不是數字：除了「1」~「13」，還要能存「吧台」「站位」。
+# 這裡只擋空白與過長的值，不寫死允許清單——之後加桌次只要改前端的選單，
+# 不必跟著改後端（白名單對不上會變成看不懂的 422）。
+TableNumber = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20)
+]
 
 
 # ---------- drinks ----------
@@ -85,7 +93,7 @@ class OrderItemIn(BaseModel):
 class OrderCreate(BaseModel):
     """一張訂單：一個桌號 + 一到多個品項。"""
 
-    table_number: int
+    table_number: TableNumber
     items: list[OrderItemIn]
 
 
@@ -95,7 +103,7 @@ class OrderEdit(BaseModel):
     items 一併帶上時會整組取代舊品項，庫存跟著重新計算。
     """
 
-    table_number: Optional[int] = None
+    table_number: Optional[TableNumber] = None
     items: Optional[list[OrderItemIn]] = None
 
 
@@ -110,7 +118,7 @@ class OrderItem(BaseModel):
 
 class Order(BaseModel):
     id: int
-    table_number: int
+    table_number: str
     items: list[OrderItem]
     item_count: int
     total_quantity: int

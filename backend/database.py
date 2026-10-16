@@ -165,9 +165,37 @@ def _column_exists(conn: Connection, table: str, column: str) -> bool:
     )
 
 
+def _column_type(conn: Connection, table: str, column: str) -> str | None:
+    return conn.execute(
+        text(
+            "SELECT data_type FROM information_schema.columns "
+            "WHERE table_name = :t AND column_name = :c"
+        ),
+        {"t": table, "c": column},
+    ).scalar()
+
+
 def _data_migrations(conn: Connection) -> list[str]:
     """結構改變時搬移既有資料。每一段都可重複執行。"""
     done = []
+
+    # 桌號改成文字，才存得下「吧台」「站位」。
+    # 既有的數字會原樣轉成字串（5 → '5'），不會遺失也不會補零；
+    # table_number 上沒有索引、外鍵或 view，所以只是單純的欄位型別轉換。
+    for table in ("order_groups", "historical_orders"):
+        if _table_exists(conn, table) and _column_type(conn, table, "table_number") in (
+            "integer",
+            "bigint",
+            "smallint",
+        ):
+            rows = conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
+            conn.execute(
+                text(
+                    f"ALTER TABLE {table} ALTER COLUMN table_number "
+                    f"TYPE TEXT USING table_number::text"
+                )
+            )
+            done.append(f"{table}.table_number 由數字改為文字（{rows} 筆資料原樣保留）")
 
     # 一張訂單多品項：舊的 orders 每一筆轉成「一張訂單 + 一個品項」。
     # 沿用原本的 id，historical_orders.order_id 才對得上。

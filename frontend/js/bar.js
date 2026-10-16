@@ -1,69 +1,26 @@
-// 吧台頁面：三欄訂單佇列，一張訂單一張卡片（卡片內列出所有品項）
-// new → preparing → completed → delivered（delivered 後離開佇列）
+// 吧台頁面：兩欄訂單佇列，一張訂單一張卡片（卡片內列出所有品項）
+// new → preparing → completed，推到 completed（待送達）就離開吧台佇列，
+// 後面的送酒與「待送達超時」警示由服務生頁負責。
 // 點卡片推進整張訂單；展開後可以單獨切換個別品項。
-// Andon：三段式超時門檻（見 common.js 的 ANDON_THRESHOLDS），
+// Andon：超時門檻見 common.js 的 ANDON_THRESHOLDS，
 //        超時除了卡片變紅，還會跳出視窗 + 播放警示音
 
-const NEXT_STATUS = { new: "preparing", preparing: "completed", completed: "delivered" };
-const NEXT_LABEL = { new: "開始製作 ▶", preparing: "完成 ✓", completed: "已送出 🚚" };
+const NEXT_STATUS = { new: "preparing", preparing: "completed" };
+const NEXT_LABEL = { new: "開始製作 ▶", preparing: "完成 ✓" };
 
-// 超時時的說明文字
+// 超時時的說明文字（不含 completed，那一類改在服務生頁觸發）
 const ANDON_REASON = {
   new: (m) => `下單後超過 ${m} 分鐘仍未開始製作`,
   preparing: (m) => `製作中已超過 ${m} 分鐘`,
-  completed: (m) => `完成後 ${m} 分鐘未送達`,
 };
-
-// ---------- 警示音（Web Audio 產生嗶聲，不需外部音檔）----------
-let audioCtx = null;
-
-function ensureAudio() {
-  if (!audioCtx) {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return null;
-    audioCtx = new Ctx();
-  }
-  if (audioCtx.state === "suspended") audioCtx.resume();
-  return audioCtx;
-}
-
-function playAlarm(beeps = 3) {
-  const ctx = ensureAudio();
-  if (!ctx || ctx.state !== "running") return false;
-  for (let i = 0; i < beeps; i++) {
-    const start = ctx.currentTime + i * 0.28;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "square";
-    osc.frequency.value = 880;
-    // 淡入淡出，避免爆音
-    gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(0.25, start + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.2);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start(start);
-    osc.stop(start + 0.22);
-  }
-  return true;
-}
 
 document.addEventListener("DOMContentLoaded", () => {
   const queues = {
     new: document.getElementById("queue-new"),
     preparing: document.getElementById("queue-preparing"),
-    completed: document.getElementById("queue-completed"),
   };
-  const modal = document.getElementById("andon-modal");
-  const modalBody = document.getElementById("andon-modal-body");
-  const soundHint = document.getElementById("sound-hint");
-
-  // 瀏覽器要求先有使用者互動才能播音；第一次點擊時解鎖並隱藏提示
-  function unlockAudio() {
-    const ctx = ensureAudio();
-    if (ctx && ctx.state === "running" && soundHint) soundHint.hidden = true;
-  }
-  document.addEventListener("click", unlockAudio, { once: true });
-  document.addEventListener("keydown", unlockAudio, { once: true });
+  setupAudioUnlock();
+  const showModal = setupAndonModal();
 
   // 已經跳過提醒的訂單，key = 訂單id:狀態（換一站會再提醒一次）
   const alerted = new Set();
@@ -94,10 +51,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const mixed = new Set(order.items.map((i) => i.status)).size > 1;
     return `
       <li data-id="${order.id}" data-status="${order.status}" data-ref="${ref}"
-          data-table="${order.table_number}"
+          data-table="${escapeHtml(order.table_number)}"
           data-summary="${escapeHtml(order.summary)}">
         <div class="order-row card-head">
-          <strong>桌 ${order.table_number}</strong>
+          <strong>${escapeHtml(tableLabel(order.table_number))}</strong>
           <span class="card-count">${order.item_count} 品項 / ${order.total_quantity} 杯</span>
           ${mixed ? '<span class="badge badge-preparing">品項進度不一</span>' : ""}
           <span class="order-time">${formatTime(order.placed_at)}</span>
@@ -126,26 +83,6 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
       </li>`;
   }
-
-  function showModal(items) {
-    modalBody.innerHTML = items
-      .map(
-        (it) => `
-        <li class="overdue-item">
-          <strong>桌 ${it.table} ・ ${it.summary}</strong>
-          <div class="modal-reason">${it.reason}</div>
-        </li>`
-      )
-      .join("");
-    modal.hidden = false;
-  }
-
-  document.getElementById("andon-modal-close").addEventListener("click", () => {
-    modal.hidden = true;
-  });
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) modal.hidden = true; // 點背景關閉
-  });
 
   // Andon：計算每張卡片在目前狀態已停留多久，超時變紅並提醒
   function updateAndon() {

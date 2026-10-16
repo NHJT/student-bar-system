@@ -94,7 +94,7 @@ def _get_or_404(db: Connection, group_id: int) -> dict:
 @router.get("")
 def list_orders(
     status: Optional[str] = None,
-    table_number: Optional[int] = None,
+    table_number: Optional[str] = None,  # 文字桌號：「3」「吧台」「站位」
     today: bool = False,
     db: Connection = Depends(get_db),
 ):

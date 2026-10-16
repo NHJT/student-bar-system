@@ -60,7 +60,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ? s.overdue
           .map(
             (o) => `
-            <li class="overdue-item">⏱ <strong>桌 ${o.table_number}</strong>
+            <li class="overdue-item">⏱ <strong>${escapeHtml(tableLabel(o.table_number))}</strong>
               ${escapeHtml(o.drink_name)} × ${o.quantity}
               ・ ${STATUS_LABELS[o.status]} 已卡 ${o.minutes_stuck} 分
               （門檻 ${o.threshold_minutes} 分）</li>`
@@ -102,7 +102,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <tr class="${andon?.overdue ? "row-overdue" : ""}"
             data-status="${o.status}" data-ref="${o[ANDON_REF_FIELD[o.status]] ?? o.placed_at}">
           <td>${o.id}</td>
-          <td>桌 ${o.table_number}</td>
+          <td>${escapeHtml(tableLabel(o.table_number))}</td>
           <td>${o.items
             .map((i) => `${escapeHtml(i.drink_name)} × ${i.quantity}${
               i.special_request ? `<br><small>📝 ${escapeHtml(i.special_request)}</small>` : ""

@@ -1,6 +1,14 @@
-// 服務生頁面：購物車式點餐（一張訂單可含多種飲料）、選桌號、標記付款
+// 服務生頁面：
+//  1. 待送達佇列（置頂）：吧台標記完成後出現在這裡，送到桌邊後按鈕切成「已送達」。
+//     送酒是服務生的工作，所以「完成後未送達」的 Andon 超時也在這一頁觸發。
+//  2. 購物車式點餐（一張訂單可含多種飲料）、選桌號、標記付款
 // 訂單在進入「製作中」之前可以修改品項或取消，
 // 每次修改後端會把 edit_count +1，作為輸入錯誤率的量測依據
+
+// 待送達的下一步只有「已送達」一種
+const DELIVER_NEXT = "delivered";
+const DELIVER_LABEL = "已送出 🚚";
+const DELIVER_REASON = (m) => `完成後 ${m} 分鐘未送達`;
 
 document.addEventListener("DOMContentLoaded", () => {
   const tableSelect = document.getElementById("table-number");
@@ -15,17 +23,24 @@ document.addEventListener("DOMContentLoaded", () => {
   const submitBtn = document.getElementById("cart-submit");
   const clearBtn = document.getElementById("cart-clear");
   const orderList = document.getElementById("order-list");
+  const deliverList = document.getElementById("queue-completed");
+  const deliverCount = document.getElementById("deliver-count");
 
   let availableDrinks = []; // 供修改表單重建下拉選單
   let cart = []; // 本次訂單的品項：{drink_id, drink_name, quantity, special_request}
   let itemQty = 1; // 加減器目前的數量，最小 1
   let editingId = null; // 正在編輯中的訂單 id
   let pendingRefresh = false; // 編輯期間收到的更新，等編輯結束再套用
+  const expandedDeliver = new Set(); // 待送達卡片展開狀態，重繪後要保持
+  const alerted = new Set(); // 已經跳過超時提醒的訂單，key = 訂單id:狀態
 
-  // 店內共 13 張桌，全部一般桌
-  for (let i = 1; i <= TABLE_COUNT; i++) {
-    tableSelect.add(new Option(`桌 ${i}`, i));
-  }
+  setupAudioUnlock();
+  const showModal = setupAndonModal();
+
+  // 出餐位置：吧台、站位排在桌 1 ~ 13 之前
+  tableOptions().forEach((value) =>
+    tableSelect.add(new Option(tableLabel(value), value))
+  );
 
   async function loadDrinks() {
     const drinks = await apiGet("/drinks");
@@ -143,7 +158,7 @@ document.addEventListener("DOMContentLoaded", () => {
     submitBtn.disabled = true;
     try {
       await apiSend("POST", "/orders", {
-        table_number: Number(tableSelect.value),
+        table_number: tableSelect.value,
         items: cart.map(({ drink_id, quantity, special_request }) => ({
           drink_id,
           quantity,
@@ -156,6 +171,128 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (err) {
       alert(`下單失敗：${err.message}`);
       submitBtn.disabled = false;
+    }
+  });
+
+  // ---------------- 待送達佇列 ----------------
+  // 卡片與操作方式沿用原本吧台頁的待送達欄位：整張切換，或展開逐項切換。
+  // 狀態切換打的是同一組既有 API，後端邏輯（含寫入 delivered_at）完全沒變。
+  function deliverItemRow(order, item) {
+    const canDeliver = item.status === "completed";
+    return `
+      <div class="bar-item ${canDeliver ? "" : "item-done"}">
+        <span class="bar-item-name">${escapeHtml(item.drink_name)} × ${item.quantity}</span>
+        ${statusBadge(item.status)}
+        ${item.special_request
+          ? `<span class="order-note">📝 ${escapeHtml(item.special_request)}</span>`
+          : ""}
+        ${canDeliver
+          ? `<button class="btn btn-small btn-ghost"
+                data-item-next="${item.id}" data-group="${order.id}"
+                data-next-status="${DELIVER_NEXT}">${DELIVER_LABEL}</button>`
+          : ""}
+      </div>`;
+  }
+
+  function deliverCard(order) {
+    const ref = order.completed_at ?? order.placed_at;
+    const open = expandedDeliver.has(order.id);
+    const mixed = new Set(order.items.map((i) => i.status)).size > 1;
+    return `
+      <li data-id="${order.id}" data-status="${order.status}" data-ref="${ref}"
+          data-table="${escapeHtml(order.table_number)}"
+          data-summary="${escapeHtml(order.summary)}">
+        <div class="order-row card-head">
+          <strong>${escapeHtml(tableLabel(order.table_number))}</strong>
+          <span class="card-count">${order.item_count} 品項 / ${order.total_quantity} 杯</span>
+          ${mixed ? '<span class="badge badge-preparing">品項進度不一</span>' : ""}
+          <span class="order-time">${formatTime(order.placed_at)}</span>
+        </div>
+        <div class="card-items" ${open ? "hidden" : ""}>
+          ${order.items
+            .map(
+              (i) => `<div class="card-item-brief">${escapeHtml(i.drink_name)} × ${i.quantity}${
+                i.special_request ? ` <span class="order-note">📝 ${escapeHtml(i.special_request)}</span>` : ""
+              }</div>`
+            )
+            .join("")}
+        </div>
+        <div class="bar-items" ${open ? "" : "hidden"}>
+          ${order.items.map((i) => deliverItemRow(order, i)).join("")}
+        </div>
+        <div class="card-action">
+          <span class="elapsed"></span>
+          <button class="btn btn-small btn-ghost" data-expand="${order.id}">
+            ${open ? "收合品項 ▴" : "分項處理 ▾"}
+          </button>
+          <button class="btn btn-small btn-primary" data-group-next="${order.id}"
+                  data-next-status="${DELIVER_NEXT}">${DELIVER_LABEL}</button>
+        </div>
+      </li>`;
+  }
+
+  function renderDeliver(orders) {
+    const pending = orders.filter((o) => o.status === "completed");
+    deliverCount.textContent = pending.length;
+    deliverCount.hidden = pending.length === 0;
+    deliverList.innerHTML = pending.length
+      ? pending.map(deliverCard).join("") // API 已依 placed_at 排序，先完成的先送
+      : '<li class="placeholder">目前沒有待送達的訂單</li>';
+    updateAndon();
+  }
+
+  // Andon：待送達停留超過門檻就整張變紅、跳視窗、響警示音。
+  // 門檻與計時基準都沿用 common.js，和原本吧台頁的那一類完全相同。
+  function updateAndon() {
+    const fresh = [];
+    deliverList.querySelectorAll("li[data-id]").forEach((li) => {
+      const state = andonState(li.dataset.status, li.dataset.ref);
+      if (!state) return;
+      const { minutes, limit, overdue } = state;
+      li.querySelector(".elapsed").textContent = `已等 ${Math.floor(minutes)} / ${limit} 分`;
+      li.classList.toggle("overdue", overdue);
+
+      const key = `${li.dataset.id}:${li.dataset.status}`;
+      if (overdue && !alerted.has(key)) {
+        alerted.add(key);
+        fresh.push({
+          table: li.dataset.table,
+          summary: li.dataset.summary,
+          reason: DELIVER_REASON(limit),
+        });
+      }
+    });
+    if (fresh.length) {
+      showModal(fresh);
+      playAlarm();
+    }
+  }
+
+  deliverList.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    const { expand, groupNext, itemNext, group, nextStatus } = btn.dataset;
+
+    if (expand !== undefined) {
+      const id = Number(expand);
+      expandedDeliver.has(id) ? expandedDeliver.delete(id) : expandedDeliver.add(id);
+      await refreshOrders();
+      return;
+    }
+    try {
+      if (groupNext !== undefined) {
+        await apiSend("PATCH", `/orders/${groupNext}/status`, { status: nextStatus });
+      } else if (itemNext !== undefined) {
+        await apiSend("PATCH", `/orders/${group}/items/${itemNext}/status`, {
+          status: nextStatus,
+        });
+      } else {
+        return;
+      }
+      await refreshOrders();
+    } catch (err) {
+      alert(`狀態更新失敗：${err.message}`);
+      await refreshOrders(); // 可能被別台裝置先更新了，重抓一次
     }
   });
 
@@ -180,7 +317,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return `
       <li data-order="${o.id}">
         <div class="order-row">
-          <strong>桌 ${o.table_number}</strong>
+          <strong>${escapeHtml(tableLabel(o.table_number))}</strong>
           <span class="order-summary">${o.item_count} 品項 / ${o.total_quantity} 杯</span>
           ${statusBadge(o.status)}
           <span class="badge ${o.payment_status === "paid" ? "badge-paid" : "badge-unpaid"}">
@@ -205,7 +342,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return `
       <li data-order="${o.id}" class="editing">
         <div class="edit-form">
-          <strong>桌 ${o.table_number}　修改訂單 #${o.id}</strong>
+          <strong>${escapeHtml(tableLabel(o.table_number))}　修改訂單 #${o.id}</strong>
           <div id="edit-items">
             ${o.items.map((i) => editItemRow(i)).join("")}
           </div>
@@ -230,12 +367,14 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function refreshOrders() {
-    // 編輯中不重繪，避免使用者打到一半的內容被蓋掉
+    const orders = await apiGet("/orders");
+    // 待送達永遠要更新：服務生在改單時，吧台可能正好完成了另一張
+    renderDeliver(orders);
+    // 下方清單在編輯中不重繪，避免使用者打到一半的內容被蓋掉
     if (editingId !== null) {
       pendingRefresh = true;
       return;
     }
-    const orders = await apiGet("/orders");
     const active = orders.filter((o) => o.status !== "cancelled").reverse(); // 新的在上面
     orderList.innerHTML = active.length
       ? active.map(orderRow).join("")
@@ -327,4 +466,7 @@ document.addEventListener("DOMContentLoaded", () => {
     },
     () => { loadDrinks(); refreshOrders(); }
   );
+
+  // Andon 每 10 秒重算一次（不用重抓資料，只更新等待時間與變紅）
+  setInterval(updateAndon, 10000);
 });
