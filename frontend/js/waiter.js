@@ -331,6 +331,21 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // ---------------- 已送出的訂單 ----------------
+  // 訂單總額 = Σ(unit_price × 數量)。
+  // 只要有任何一個品項沒有價格，整筆就顯示「—」——這時候加總出來的數字
+  // 一定少算，寧可不顯示也不要給錯的金額。已取消的品項不計入。
+  function orderTotal(order) {
+    const billable = order.items.filter((i) => i.status !== "cancelled");
+    if (!billable.length) return null;
+    if (billable.some((i) => i.unit_price == null)) return null;
+    return billable.reduce((sum, i) => sum + i.unit_price * i.quantity, 0);
+  }
+
+  function totalLabel(order) {
+    const total = orderTotal(order);
+    return `<span class="order-total">${total == null ? "—" : `NT$ ${total}`}</span>`;
+  }
+
   function itemLines(order) {
     return order.items
       .map(
@@ -363,6 +378,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <span class="order-summary">${o.total_quantity} 杯</span>
           <span class="badge badge-paid">已付款</span>
           <span class="order-time">${formatTime(o.placed_at)}</span>
+          ${totalLabel(o)}
         </button>
         ${open ? itemLines(o) : ""}
       </li>`;
@@ -382,6 +398,7 @@ document.addEventListener("DOMContentLoaded", () => {
           </span>
           ${o.edit_count > 0 ? `<span class="badge badge-edited">已改 ${o.edit_count} 次</span>` : ""}
           <span class="order-time">${formatTime(o.placed_at)}</span>
+          ${totalLabel(o)}
           ${o.payment_status === "unpaid"
             ? `<button class="btn btn-small btn-primary" data-pay="${o.id}">標記付款</button>`
             : ""}

@@ -308,11 +308,23 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ---------------- 飲品管理 ----------------
+  // 售價顯示：未定價顯示「—」而不是 0
+  function fmtPrice(price) {
+    return price == null ? "—" : `NT$ ${price}`;
+  }
+
+  // 新增表單的售價：留空代表未定價，送 null
+  function priceInput(id) {
+    const raw = document.getElementById(id).value.trim();
+    return raw === "" ? null : Math.round(Number(raw));
+  }
+
   function drinkRow(d) {
     return `
       <tr>
         <td>${escapeHtml(d.name)}</td>
         <td>${escapeHtml(d.category)}</td>
+        <td class="drink-price">${fmtPrice(d.price)}</td>
         <td>${d.is_available
           ? '<span class="badge badge-paid">供應中</span>'
           : '<span class="badge badge-delivered">已停售</span>'}</td>
@@ -329,6 +341,8 @@ document.addEventListener("DOMContentLoaded", () => {
       <tr class="row-editing" data-editing-drink="${d.id}">
         <td><input type="text" value="${escapeHtml(d.name)}" data-field="name" class="stock-input"></td>
         <td><input type="text" value="${escapeHtml(d.category)}" data-field="category" class="stock-input"></td>
+        <td><input type="number" step="1" min="0" value="${d.price ?? ""}"
+                   data-field="price" class="stock-input" placeholder="未定價"></td>
         <td><label class="inline-check">
           <input type="checkbox" data-field="available" ${d.is_available ? "checked" : ""}> 供應中
         </label></td>
@@ -344,7 +358,7 @@ document.addEventListener("DOMContentLoaded", () => {
     drinks = await apiGet("/drinks");
     drinkBody.innerHTML = drinks.length
       ? drinks.map(drinkRow).join("")
-      : '<tr><td colspan="4" class="placeholder">尚無飲品</td></tr>';
+      : '<tr><td colspan="5" class="placeholder">尚無飲品</td></tr>';
 
     // 同步配方管理的飲品下拉選單，盡量保留目前選擇
     const keep = recipeSelect.value;
@@ -384,9 +398,15 @@ document.addEventListener("DOMContentLoaded", () => {
           alert("名稱與分類不可空白");
           return;
         }
+        const rawPrice = tr.querySelector('[data-field="price"]').value.trim();
+        if (rawPrice !== "" && !(Number(rawPrice) >= 0)) {
+          alert("售價必須是 0 或正整數，留空代表未定價");
+          return;
+        }
         await apiSend("PATCH", `/drinks/${saveDrink}`, {
           name,
           category,
+          price: rawPrice === "" ? null : Math.round(Number(rawPrice)),
           is_available: tr.querySelector('[data-field="available"]').checked,
         });
         editingDrink = null;
@@ -405,6 +425,7 @@ document.addEventListener("DOMContentLoaded", () => {
       await apiSend("POST", "/drinks", {
         name: document.getElementById("new-drink-name").value.trim(),
         category: document.getElementById("new-drink-category").value.trim(),
+        price: priceInput("new-drink-price"),
         is_available: document.getElementById("new-drink-available").checked,
       });
       e.target.reset();

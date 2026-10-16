@@ -85,16 +85,17 @@
       <div class="table-scroll">
         <table class="drink-table">
           <thead>
-            <tr><th>名稱</th><th>分類</th><th>供應</th><th></th></tr>
+            <tr><th>名稱</th><th>分類</th><th>售價</th><th>供應</th><th></th></tr>
           </thead>
           <tbody id="drink-table-body">
-            <tr><td colspan="4" class="placeholder">尚無資料</td></tr>
+            <tr><td colspan="5" class="placeholder">尚無資料</td></tr>
           </tbody>
         </table>
       </div>
       <form id="drink-add-form" class="add-form">
         <input type="text" id="new-drink-name" placeholder="飲品名稱" required>
         <input type="text" id="new-drink-category" placeholder="分類（例：調酒）" required>
+        <input type="number" id="new-drink-price" placeholder="售價 NT$" step="1" min="0">
         <label class="inline-check">
           <input type="checkbox" id="new-drink-available" checked> 供應中
         </label>

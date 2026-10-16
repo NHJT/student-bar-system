@@ -54,7 +54,7 @@ def _items_of(db: Connection, group_ids: list[int]) -> dict[int, list[dict]]:
             text(
                 """
                 SELECT i.id, i.group_id, i.drink_id, d.name AS drink_name,
-                       i.quantity, i.special_request, i.status
+                       i.quantity, i.special_request, i.status, i.unit_price
                 FROM order_items i JOIN drinks d ON d.id = i.drink_id
                 WHERE i.group_id = ANY(:ids)
                 ORDER BY i.id
@@ -162,10 +162,14 @@ def _restore_items(db: Connection, items: list[dict]) -> list[int]:
 
 
 def _insert_items(db: Connection, group_id: int, items: list[OrderItemIn]) -> None:
+    # unit_price 直接從 drinks 取當下的售價存成快照，
+    # 之後經理改價不會影響已經成立的訂單；沒定價就是 NULL
     db.execute(
         text(
-            "INSERT INTO order_items (group_id, drink_id, quantity, special_request) "
-            "VALUES (:group_id, :drink_id, :quantity, :special_request)"
+            "INSERT INTO order_items "
+            "(group_id, drink_id, quantity, special_request, unit_price) "
+            "SELECT :group_id, :drink_id, :quantity, :special_request, d.price "
+            "FROM drinks d WHERE d.id = :drink_id"
         ),
         [
             {

@@ -40,13 +40,14 @@ async def create_drink(payload: DrinkCreate, db: Connection = Depends(get_db)):
     try:
         new_id = db.execute(
             text(
-                "INSERT INTO drinks (name, category, is_available) "
-                "VALUES (:name, :category, :is_available) RETURNING id"
+                "INSERT INTO drinks (name, category, is_available, price) "
+                "VALUES (:name, :category, :is_available, :price) RETURNING id"
             ),
             {
                 "name": payload.name.strip(),
                 "category": payload.category.strip(),
                 "is_available": payload.is_available,
+                "price": payload.price,
             },
         ).scalar_one()
         db.commit()

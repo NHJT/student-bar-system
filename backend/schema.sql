@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS drinks (
     id           SERIAL  PRIMARY KEY,
     name         TEXT    NOT NULL UNIQUE,
     category     TEXT    NOT NULL,
-    is_available BOOLEAN NOT NULL DEFAULT TRUE
+    is_available BOOLEAN NOT NULL DEFAULT TRUE,
+    price        INTEGER          -- 售價（NT$，整數）。未定價為 NULL
 );
 
 -- 原料
@@ -60,6 +61,9 @@ CREATE TABLE IF NOT EXISTS order_items (
     drink_id        INTEGER NOT NULL REFERENCES drinks (id),
     quantity        INTEGER NOT NULL DEFAULT 1,
     special_request TEXT,
+    -- 下單當下的 drinks.price 快照。之後改售價不影響已成立的訂單；
+    -- 這個欄位加進來之前的舊訂單一律是 NULL
+    unit_price      INTEGER,
     status          TEXT    NOT NULL DEFAULT 'new'
                     CHECK (status IN ('new', 'preparing', 'completed', 'delivered', 'cancelled'))
 );

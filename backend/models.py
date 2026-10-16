@@ -18,6 +18,7 @@ class DrinkBase(BaseModel):
     name: str
     category: str
     is_available: bool = True
+    price: Optional[int] = None  # 售價（NT$，整數）。未定價為 None
 
 
 class DrinkCreate(DrinkBase):
@@ -34,6 +35,7 @@ class DrinkUpdate(BaseModel):
     name: Optional[str] = None
     category: Optional[str] = None
     is_available: Optional[bool] = None
+    price: Optional[int] = None
 
 
 # ---------- ingredients ----------
@@ -118,6 +120,7 @@ class OrderItem(BaseModel):
     quantity: int
     special_request: Optional[str] = None
     status: str
+    unit_price: Optional[int] = None  # 下單當下的售價快照
 
 
 class Order(BaseModel):

@@ -123,6 +123,10 @@ _MIGRATIONS = [
     ("orders", "payment_completed_at", "TIMESTAMPTZ"),
     # 無限制供應的原料（當天現買、不會缺貨）。既有原料一律預設 FALSE
     ("ingredients", "is_unlimited", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    # 售價。drinks.price 是目前定價，order_items.unit_price 是下單當下的快照，
+    # 兩者都允許為空（未定價 / 這個欄位出現之前的舊訂單）
+    ("drinks", "price", "INTEGER"),
+    ("order_items", "unit_price", "INTEGER"),
     # 配方數字的來源註記（換算估值 vs 酒譜原始數字）
     ("recipes", "note", "TEXT"),
 ]
@@ -196,6 +200,10 @@ def pending_migrations() -> list[str]:
                 conn, "ingredients", "is_unlimited"
             ):
                 notes.append("ingredients 還沒有 is_unlimited 欄位，無法標記無限制供應")
+            if _table_exists(conn, "order_items") and not _column_exists(
+                conn, "order_items", "unit_price"
+            ):
+                notes.append("order_items 還沒有 unit_price 欄位，下單會失敗")
     except Exception:  # 連不上資料庫時交給呼叫端既有的錯誤處理
         return []
     return notes

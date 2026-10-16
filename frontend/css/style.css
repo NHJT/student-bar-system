@@ -299,6 +299,9 @@ form input, form select,
 }
 .order-time { color: var(--muted); font-size: .8rem; margin-left: auto; }
 .order-note { margin-top: .35rem; font-size: .85rem; color: var(--muted); }
+/* 訂單總額：和時間並排，數字要比周邊明顯一點（這一欄的重點是收錢） */
+.order-total { font-size: .85rem; font-weight: 700; color: var(--text); }
+.drink-price { white-space: nowrap; }
 .card-action { margin-top: .5rem; font-size: .85rem; color: var(--primary); text-align: right; }
 
 /* ---------- 狀態徽章 ---------- */
