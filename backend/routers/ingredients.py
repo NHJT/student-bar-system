@@ -49,14 +49,17 @@ async def create_ingredient(
     try:
         new_id = db.execute(
             text(
-                "INSERT INTO ingredients (name, unit, current_stock, reorder_point) "
-                "VALUES (:name, :unit, :current_stock, :reorder_point) RETURNING id"
+                "INSERT INTO ingredients "
+                "(name, unit, current_stock, reorder_point, is_unlimited) "
+                "VALUES (:name, :unit, :current_stock, :reorder_point, :is_unlimited) "
+                "RETURNING id"
             ),
             {
                 "name": payload.name.strip(),
                 "unit": payload.unit.strip(),
                 "current_stock": payload.current_stock,
                 "reorder_point": payload.reorder_point,
+                "is_unlimited": payload.is_unlimited,
             },
         ).scalar_one()
         db.commit()

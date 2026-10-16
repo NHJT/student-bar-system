@@ -42,6 +42,9 @@ class IngredientBase(BaseModel):
     unit: str
     current_stock: float = 0
     reorder_point: float = 0
+    # 當天現買、不會缺貨的原料：不扣庫存、不擋下單、不進補貨警示。
+    # current_stock / reorder_point 的數字仍然保留，取消勾選後可以接回去
+    is_unlimited: bool = False
 
 
 class IngredientCreate(IngredientBase):
@@ -59,6 +62,7 @@ class IngredientUpdate(BaseModel):
     unit: Optional[str] = None
     current_stock: Optional[float] = None
     reorder_point: Optional[float] = None
+    is_unlimited: Optional[bool] = None
 
 
 class StockAdjust(BaseModel):

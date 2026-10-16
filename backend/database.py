@@ -121,6 +121,8 @@ _MIGRATIONS = [
     ("orders", "edit_count", "INTEGER NOT NULL DEFAULT 0"),
     # 舊資料無從得知當初的付款時間，補上欄位後只有之後的訂單才會有值
     ("orders", "payment_completed_at", "TIMESTAMPTZ"),
+    # 無限制供應的原料（當天現買、不會缺貨）。既有原料一律預設 FALSE
+    ("ingredients", "is_unlimited", "BOOLEAN NOT NULL DEFAULT FALSE"),
     # 配方數字的來源註記（換算估值 vs 酒譜原始數字）
     ("recipes", "note", "TEXT"),
 ]
@@ -190,6 +192,10 @@ def pending_migrations() -> list[str]:
                     conn, table, "table_number"
                 ) in _INT_TYPES:
                     notes.append(f"{table}.table_number 還是數字，存不下「吧台」等文字桌號")
+            if _table_exists(conn, "ingredients") and not _column_exists(
+                conn, "ingredients", "is_unlimited"
+            ):
+                notes.append("ingredients 還沒有 is_unlimited 欄位，無法標記無限制供應")
     except Exception:  # 連不上資料庫時交給呼叫端既有的錯誤處理
         return []
     return notes

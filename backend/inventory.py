@@ -5,13 +5,17 @@ from sqlalchemy.engine import Connection
 
 from backend.database import rows_to_dicts
 
+# 無限制供應的原料（當天現買、不會缺貨）直接排除在外：
+# 扣料、退料、缺料檢查三件事都走這條 SQL，排在這裡一次解決——
+# 它們不會被扣庫存，也就不可能因為庫存不足而擋下訂單。
+# 配方本身不受影響，recipes 的資料完全保留。
 _RECIPE_SQL = text(
     """
     SELECT r.ingredient_id, r.quantity_needed,
            i.name, i.unit, i.current_stock, i.reorder_point
     FROM recipes r
     JOIN ingredients i ON i.id = r.ingredient_id
-    WHERE r.drink_id = :drink_id
+    WHERE r.drink_id = :drink_id AND NOT i.is_unlimited
     """
 )
 
@@ -72,12 +76,13 @@ def restore(db: Connection, drink_id: int, quantity: int) -> list[int]:
 
 
 def low_stock(db: Connection) -> list[dict]:
-    """低於補貨點的原料列表。"""
+    """低於補貨點的原料列表。無限制供應的不列入。"""
     return rows_to_dicts(
         db.execute(
             text(
                 "SELECT * FROM ingredients "
-                "WHERE current_stock < reorder_point ORDER BY name"
+                "WHERE NOT is_unlimited AND current_stock < reorder_point "
+                "ORDER BY name"
             )
         )
     )

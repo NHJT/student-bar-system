@@ -326,6 +326,19 @@ form input, form select,
 
 .row-low td { background: #fdf6ec; }
 
+/* 無限制供應（當天現買、不扣庫存）：顏色比照「已付款」的中性綠，
+   和庫存不足的橘底區隔開，不要看起來像警示 */
+.badge-unlimited { background: #eef1f6; color: var(--muted); }
+.row-unlimited td { background: #fbfcfe; color: var(--muted); }
+.row-unlimited td:first-child { color: var(--text); }
+.stock-na { color: var(--muted); }
+/* 分組標題列 */
+.stock-group td {
+  background: var(--bg); color: var(--muted);
+  font-size: .78rem; padding: .35rem .5rem; border-top: 1px solid var(--border);
+}
+.unlimited-check { margin-top: .3rem; font-size: .78rem; }
+
 /* ---------- 歷史數據 ---------- */
 .history-count { color: var(--muted); font-weight: 400; font-size: .8rem; }
 .history-list { list-style: none; }

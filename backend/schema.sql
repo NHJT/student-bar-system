@@ -14,7 +14,11 @@ CREATE TABLE IF NOT EXISTS ingredients (
     name          TEXT             NOT NULL UNIQUE,
     unit          TEXT             NOT NULL,          -- 例: ml, 顆, 片
     current_stock DOUBLE PRECISION NOT NULL DEFAULT 0,
-    reorder_point DOUBLE PRECISION NOT NULL DEFAULT 0 -- 低於此量觸發補貨警示
+    reorder_point DOUBLE PRECISION NOT NULL DEFAULT 0, -- 低於此量觸發補貨警示
+    -- 當天現買、不會缺貨的原料（柳橙汁、檸檬、薄荷、蛋白…）：
+    -- 不扣庫存、不擋下單、不進補貨警示。庫存與補貨點的數字仍然保留著，
+    -- 取消勾選後可以接回原本的值（但那段期間沒有記錄，需要重新盤點）
+    is_unlimited  BOOLEAN          NOT NULL DEFAULT FALSE
 );
 
 -- 配方：一杯飲料需要哪些原料、各多少量

@@ -128,8 +128,24 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // 一般顯示模式的原料列
+  // 一般顯示模式的原料列。
+  // 無限制供應的原料不扣庫存，庫存與補貨點的數字就沒有意義，顯示「—」
+  // （資料庫裡的數字還在，取消勾選後會回來）
   function stockRow(i) {
+    if (i.is_unlimited) {
+      return `
+      <tr class="row-unlimited">
+        <td>${escapeHtml(i.name)} <span class="badge badge-unlimited">無限制</span></td>
+        <td class="stock-na">—</td>
+        <td>${escapeHtml(i.unit)}</td>
+        <td class="stock-na">—</td>
+        <td class="stock-actions">
+          <button class="btn btn-small btn-ghost" data-edit-stock="${i.id}">編輯</button>
+          <button class="btn btn-small btn-danger" data-delete-stock="${i.id}"
+                  data-name="${escapeHtml(i.name)}">刪除</button>
+        </td>
+      </tr>`;
+    }
     return `
       <tr class="${i.current_stock < i.reorder_point ? "row-low" : ""}">
         <td>${escapeHtml(i.name)}</td>
@@ -144,22 +160,44 @@ document.addEventListener("DOMContentLoaded", () => {
       </tr>`;
   }
 
-  // 編輯模式：四個欄位都可以改
+  // 編輯模式：四個欄位都可以改，另外加「無限制供應」核取方塊。
+  // 勾選時停用庫存／補貨點輸入框，但值留著不清空，取消勾選就接回原本的數字。
   function stockEditRow(i) {
+    const off = i.is_unlimited ? "disabled" : "";
     return `
       <tr class="row-editing" data-editing="${i.id}">
-        <td><input type="text" value="${escapeHtml(i.name)}" data-field="name" class="stock-input"></td>
+        <td>
+          <input type="text" value="${escapeHtml(i.name)}" data-field="name" class="stock-input">
+          <label class="inline-check unlimited-check">
+            <input type="checkbox" data-field="unlimited" ${i.is_unlimited ? "checked" : ""}>
+            無限制供應
+          </label>
+        </td>
         <td><input type="number" step="0.01" min="0" value="${i.current_stock}"
-                   data-field="stock" class="stock-input"></td>
+                   data-field="stock" class="stock-input" ${off}></td>
         <td><input type="text" value="${escapeHtml(i.unit)}" data-field="unit" class="stock-input unit-input"></td>
         <td><input type="number" step="0.01" min="0" value="${i.reorder_point}"
-                   data-field="reorder" class="stock-input"></td>
+                   data-field="reorder" class="stock-input" ${off}></td>
         <td class="stock-actions">
           <button class="btn btn-small btn-primary" data-save-stock="${i.id}">儲存</button>
           <button class="btn btn-small btn-ghost" data-cancel-stock="1">取消</button>
         </td>
       </tr>`;
   }
+
+  // 勾／取消「無限制供應」時即時切換庫存欄位的可用狀態。
+  // 數值不動，所以取消勾選後原本的庫存就直接回來了。
+  stockBody.addEventListener("change", (e) => {
+    const box = e.target.closest('[data-field="unlimited"]');
+    if (!box) return;
+    const tr = box.closest("tr");
+    ["stock", "reorder"].forEach((f) => {
+      tr.querySelector(`[data-field="${f}"]`).disabled = box.checked;
+    });
+    if (!box.checked) {
+      alert("無限制期間沒有記錄扣庫存，請重新盤點");
+    }
+  });
 
   async function refreshStock() {
     // 編輯中不重繪，避免輸入到一半被蓋掉
@@ -180,8 +218,17 @@ document.addEventListener("DOMContentLoaded", () => {
           .join("")
       : '<li class="placeholder">庫存充足 ✓</li>';
 
+    // 無限制供應的集中放列表下方，不要和要盯庫存的原料混在一起
+    const limited = ingredients.filter((i) => !i.is_unlimited);
+    const unlimited = ingredients.filter((i) => i.is_unlimited);
+    const group = (label) =>
+      `<tr class="stock-group"><td colspan="5">${label}</td></tr>`;
     stockBody.innerHTML = ingredients.length
-      ? ingredients.map(stockRow).join("")
+      ? limited.map(stockRow).join("") +
+        (unlimited.length
+          ? group(`無限制供應（${unlimited.length} 項，不扣庫存、不進警示）`) +
+            unlimited.map(stockRow).join("")
+          : "")
       : '<tr><td colspan="5" class="placeholder">尚無資料</td></tr>';
   }
 
@@ -206,13 +253,16 @@ document.addEventListener("DOMContentLoaded", () => {
       } else if (saveStock) {
         const tr = btn.closest("tr");
         const value = (f) => tr.querySelector(`[data-field="${f}"]`).value;
+        const unlimited = tr.querySelector('[data-field="unlimited"]').checked;
         const stock = Number(value("stock"));
         const reorder = Number(value("reorder"));
         if (!value("name").trim() || !value("unit").trim()) {
           alert("名稱與單位不可空白");
           return;
         }
-        if (!Number.isFinite(stock) || !Number.isFinite(reorder) || stock < 0 || reorder < 0) {
+        // 無限制供應時這兩個數字用不到（但仍照原值存回去，取消勾選才接得回來）
+        if (!unlimited &&
+            (!Number.isFinite(stock) || !Number.isFinite(reorder) || stock < 0 || reorder < 0)) {
           alert("庫存與補貨點必須是 0 或正數");
           return;
         }
@@ -221,6 +271,7 @@ document.addEventListener("DOMContentLoaded", () => {
           unit: value("unit").trim(),
           current_stock: stock,
           reorder_point: reorder,
+          is_unlimited: unlimited,
         });
         await closeStockEditor();
       }
@@ -239,6 +290,7 @@ document.addEventListener("DOMContentLoaded", () => {
         unit: document.getElementById("new-ingredient-unit").value.trim(),
         current_stock: Number(document.getElementById("new-ingredient-stock").value),
         reorder_point: Number(document.getElementById("new-ingredient-reorder").value),
+        is_unlimited: document.getElementById("new-ingredient-unlimited").checked,
       });
       e.target.reset();
       document.getElementById("new-ingredient-stock").value = 0;
