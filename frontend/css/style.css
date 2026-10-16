@@ -301,6 +301,17 @@ form input, form select,
 .order-note { margin-top: .35rem; font-size: .85rem; color: var(--muted); }
 /* 訂單總額：和時間並排，數字要比周邊明顯一點（這一欄的重點是收錢） */
 .order-total { font-size: .85rem; font-weight: 700; color: var(--text); }
+
+/* 退回鍵：刻意做得比「完成／已送出」小又淡，而且位置分開，
+   讓它不像主要動作，降低再次誤觸的機會 */
+.btn-revert {
+  padding: .15rem .45rem; font-size: .72rem; line-height: 1.4;
+  background: transparent; color: var(--muted);
+  border: 1px dashed var(--border); border-radius: 6px;
+}
+.btn-revert:hover { color: var(--text); border-style: solid; }
+/* 和右邊的主要按鈕拉開距離 */
+.card-action .btn-revert { margin-right: auto; }
 .drink-price { white-space: nowrap; }
 .card-action { margin-top: .5rem; font-size: .85rem; color: var(--primary); text-align: right; }
 

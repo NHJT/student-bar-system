@@ -9,6 +9,9 @@ const NEXT_STATUS = { new: "preparing", preparing: "completed" };
 const NEXT_LABEL = { new: "開始製作 ▶", preparing: "完成 ✓" };
 
 // 超時時的說明文字（不含 completed，那一類改在服務生頁觸發）
+// 可以退回上一個狀態的，對應按鈕文字。delivered 不在裡面（外場已確認送達）
+const REVERT_LABEL = { preparing: "↩ 退回新訂單", completed: "↩ 退回製作中" };
+
 const ANDON_REASON = {
   new: (m) => `下單後超過 ${m} 分鐘仍未開始製作`,
   preparing: (m) => `製作中已超過 ${m} 分鐘`,
@@ -35,6 +38,11 @@ document.addEventListener("DOMContentLoaded", () => {
         ${statusBadge(item.status)}
         ${item.special_request
           ? `<span class="order-note">📝 ${escapeHtml(item.special_request)}</span>`
+          : ""}
+        ${REVERT_LABEL[item.status]
+          ? `<button class="btn btn-revert" data-item-revert="${item.id}"
+                data-group="${order.id}"
+                title="退回上一個狀態">${REVERT_LABEL[item.status]}</button>`
           : ""}
         ${next
           ? `<button class="btn btn-small btn-ghost"
@@ -73,6 +81,10 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
         <div class="card-action">
           <span class="elapsed"></span>
+          ${REVERT_LABEL[order.status]
+            ? `<button class="btn btn-revert" data-group-revert="${order.id}"
+                  title="退回上一個狀態">${REVERT_LABEL[order.status]}</button>`
+            : ""}
           <button class="btn btn-small btn-ghost" data-expand="${order.id}">
             ${open ? "收合品項 ▴" : "分項處理 ▾"}
           </button>
@@ -125,7 +137,8 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelector("main").addEventListener("click", async (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
-    const { expand, groupNext, itemNext, group, nextStatus } = btn.dataset;
+    const { expand, groupNext, itemNext, group, nextStatus,
+            groupRevert, itemRevert } = btn.dataset;
 
     // 展開／收合只影響畫面
     if (expand !== undefined) {
@@ -136,7 +149,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     try {
-      if (groupNext !== undefined) {
+      if (groupRevert !== undefined) {
+        // 誤觸要能快速修正，所以不做二次確認
+        await apiSend("PATCH", `/orders/${groupRevert}/revert`);
+      } else if (itemRevert !== undefined) {
+        await apiSend("PATCH", `/orders/${group}/items/${itemRevert}/revert`);
+      } else if (groupNext !== undefined) {
         await apiSend("PATCH", `/orders/${groupNext}/status`, { status: nextStatus });
       } else if (itemNext !== undefined) {
         await apiSend("PATCH", `/orders/${group}/items/${itemNext}/status`, {

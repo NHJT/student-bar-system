@@ -72,6 +72,29 @@ CREATE INDEX IF NOT EXISTS idx_groups_status ON order_groups (status);
 CREATE INDEX IF NOT EXISTS idx_groups_placed_at ON order_groups (placed_at);
 CREATE INDEX IF NOT EXISTS idx_items_group ON order_items (group_id);
 
+-- 狀態退回紀錄（誤觸追蹤）。
+-- 只記錄「退回上一個狀態」這個動作，用來之後算吧台的誤觸率。
+-- 和 order_groups.edit_count 是兩回事：那個算的是服務生輸入錯誤率，
+-- 兩者不要混在一起。
+-- 這張表不參與每日結算，也不影響庫存。
+CREATE TABLE IF NOT EXISTS order_events (
+    id                SERIAL      PRIMARY KEY,
+    group_id          INTEGER     NOT NULL,  -- order_groups.id（不設外鍵，訂單刪了紀錄仍留著）
+    item_id           INTEGER,               -- 單一品項退回時才有；整張退回為 NULL
+    event_type        TEXT        NOT NULL DEFAULT 'revert',
+    from_status       TEXT        NOT NULL,
+    to_status         TEXT        NOT NULL,
+    -- 退回前訂單上的時間戳，退回時會被清掉，留在這裡才查得回來
+    prev_started_at   TIMESTAMPTZ,
+    prev_completed_at TIMESTAMPTZ,
+    -- 系統目前沒有登入機制，分不出是誰按的，只能記下是哪一頁送出的
+    actor             TEXT        NOT NULL DEFAULT 'bar',
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_group ON order_events (group_id);
+CREATE INDEX IF NOT EXISTS idx_events_created ON order_events (created_at);
+
 -- 每日結算：每天 23:59 把當日營運數字存成一筆歷史紀錄
 -- 以 business_date 為主鍵，重跑同一天會覆蓋而不是新增
 CREATE TABLE IF NOT EXISTS daily_summary (

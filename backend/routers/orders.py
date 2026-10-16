@@ -35,6 +35,11 @@ ALLOWED_TRANSITIONS = {
 # 訂單狀態取最落後的品項，所以每個階段有先後順序
 STAGE_ORDER = ["new", "preparing", "completed", "delivered"]
 
+# 「退回上一個狀態」的對照。刻意另外列一份而不是放寬 ALLOWED_TRANSITIONS，
+# 前進的規則完全不受影響，而且退回一次只能退一步，不能任意跳。
+# delivered 不在裡面：外場已經確認送達，不開放退回。
+REVERT_TARGET = {"preparing": "new", "completed": "preparing"}
+
 # 進入某狀態時要蓋上的時間戳欄位
 STATUS_TIMESTAMP = {
     "preparing": "started_at",
@@ -272,11 +277,125 @@ def _sync_group_status(db: Connection, group_id: int, current: str) -> str:
     if target in STATUS_TIMESTAMP:
         column = STATUS_TIMESTAMP[target]
         sets.append(f"{column} = COALESCE({column}, NOW())")
+    # 往回退時，把「比新狀態更後面」的階段時間戳清掉。
+    # 重新推進時上面的 COALESCE 會蓋上新的時間，誤觸不會污染製作時間的計算。
+    # 前進時這段不會執行，原本的行為完全不變。
+    if (
+        current in STAGE_ORDER
+        and target in STAGE_ORDER
+        and STAGE_ORDER.index(target) < STAGE_ORDER.index(current)
+    ):
+        for stage in STAGE_ORDER[STAGE_ORDER.index(target) + 1 :]:
+            if stage in STATUS_TIMESTAMP:
+                sets.append(f"{STATUS_TIMESTAMP[stage]} = NULL")
     db.execute(
         text(f"UPDATE order_groups SET {', '.join(sets)} WHERE id = :id"),
         {"status": target, "id": group_id},
     )
     return target
+
+
+def _revert_target(status: str) -> str:
+    """回傳可以退回的上一個狀態；不能退就直接回 409。"""
+    target = REVERT_TARGET.get(status)
+    if target is None:
+        detail = (
+            "已送達的訂單不能退回"
+            if status == "delivered"
+            else f"「{status}」沒有可以退回的上一個狀態"
+        )
+        raise HTTPException(status_code=409, detail=detail)
+    return target
+
+
+def _log_revert(
+    db: Connection,
+    group_id: int,
+    item_id: Optional[int],
+    from_status: str,
+    to_status: str,
+    before: dict,
+    actor: str,
+) -> None:
+    """把退回動作寫進 order_events，連同即將被清掉的時間戳。
+
+    這是獨立的誤觸追蹤，不會動到 order_groups.edit_count
+    （那個算的是服務生的輸入錯誤率，兩個指標不要混在一起）。
+    """
+    db.execute(
+        text(
+            """
+            INSERT INTO order_events
+                (group_id, item_id, event_type, from_status, to_status,
+                 prev_started_at, prev_completed_at, actor)
+            VALUES (:group_id, :item_id, 'revert', :from_status, :to_status,
+                    :prev_started_at, :prev_completed_at, :actor)
+            """
+        ),
+        {
+            "group_id": group_id,
+            "item_id": item_id,
+            "from_status": from_status,
+            "to_status": to_status,
+            "prev_started_at": before.get("started_at"),
+            "prev_completed_at": before.get("completed_at"),
+            "actor": actor,
+        },
+    )
+
+
+@router.patch("/{group_id}/revert")
+async def revert_status(group_id: int, db: Connection = Depends(get_db)):
+    """把整張訂單退回上一個狀態（製作中→新訂單、待送達→製作中）。
+
+    已送達不能退。庫存不受影響：扣料只在建立訂單時發生，
+    退料只在「還沒開工就取消」時發生，狀態前後移動都不碰庫存。
+    """
+    order = _get_or_404(db, group_id)
+    current = order["status"]
+    target = _revert_target(current)
+
+    # 走在前面的品項一起退回來，落後的維持原狀
+    db.execute(
+        text(
+            "UPDATE order_items SET status = :target "
+            "WHERE group_id = :id AND status <> 'cancelled' "
+            "AND array_position(:order, status) > array_position(:order, :target)"
+        ),
+        {"target": target, "id": group_id, "order": STAGE_ORDER},
+    )
+    _log_revert(db, group_id, None, current, target, order, "bar")
+    _sync_group_status(db, group_id, current)
+    db.commit()
+
+    updated = _get_or_404(db, group_id)
+    await manager.broadcast({"event": "order_updated", "order": updated})
+    return updated
+
+
+@router.patch("/{group_id}/items/{item_id}/revert")
+async def revert_item_status(
+    group_id: int, item_id: int, db: Connection = Depends(get_db)
+):
+    """把單一品項退回上一個狀態；同一張訂單的其他品項不受影響。"""
+    order = _get_or_404(db, group_id)
+    item = next((i for i in order["items"] if i["id"] == item_id), None)
+    if item is None:
+        raise HTTPException(status_code=404, detail="這張訂單沒有這個品項")
+
+    current = item["status"]
+    target = _revert_target(current)
+    db.execute(
+        text("UPDATE order_items SET status = :status WHERE id = :id"),
+        {"status": target, "id": item_id},
+    )
+    _log_revert(db, group_id, item_id, current, target, order, "bar")
+    _sync_group_status(db, group_id, order["status"])
+    db.commit()
+
+    updated = _get_or_404(db, group_id)
+    await manager.broadcast({"event": "order_updated", "order": updated})
+    return updated
 
 
 @router.patch("/{group_id}/status")

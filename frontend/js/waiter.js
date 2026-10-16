@@ -9,6 +9,8 @@
 const DELIVER_NEXT = "delivered";
 const DELIVER_LABEL = "已送出 🚚";
 const DELIVER_REASON = (m) => `完成後 ${m} 分鐘未送達`;
+// 待送達在角色分工時搬到這一頁，所以「退回製作中」也放在這裡
+const REVERT_LABEL = "↩ 退回製作中";
 
 document.addEventListener("DOMContentLoaded", () => {
   const tableSelect = document.getElementById("table-number");
@@ -221,7 +223,9 @@ document.addEventListener("DOMContentLoaded", () => {
           ? `<span class="order-note">📝 ${escapeHtml(item.special_request)}</span>`
           : ""}
         ${canDeliver
-          ? `<button class="btn btn-small btn-ghost"
+          ? `<button class="btn btn-revert" data-item-revert="${item.id}"
+                data-group="${order.id}" title="退回上一個狀態">${REVERT_LABEL}</button>
+             <button class="btn btn-small btn-ghost"
                 data-item-next="${item.id}" data-group="${order.id}"
                 data-next-status="${DELIVER_NEXT}">${DELIVER_LABEL}</button>`
           : ""}
@@ -256,6 +260,8 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
         <div class="card-action">
           <span class="elapsed"></span>
+          <button class="btn btn-revert" data-group-revert="${order.id}"
+                  title="退回上一個狀態">${REVERT_LABEL}</button>
           <button class="btn btn-small btn-ghost" data-expand="${order.id}">
             ${open ? "收合品項 ▴" : "分項處理 ▾"}
           </button>
@@ -305,7 +311,8 @@ document.addEventListener("DOMContentLoaded", () => {
   deliverList.addEventListener("click", async (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
-    const { expand, groupNext, itemNext, group, nextStatus } = btn.dataset;
+    const { expand, groupNext, itemNext, group, nextStatus,
+            groupRevert, itemRevert } = btn.dataset;
 
     if (expand !== undefined) {
       const id = Number(expand);
@@ -314,7 +321,12 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     try {
-      if (groupNext !== undefined) {
+      if (groupRevert !== undefined) {
+        // 誤觸要能快速修正，所以不做二次確認
+        await apiSend("PATCH", `/orders/${groupRevert}/revert`);
+      } else if (itemRevert !== undefined) {
+        await apiSend("PATCH", `/orders/${group}/items/${itemRevert}/revert`);
+      } else if (groupNext !== undefined) {
         await apiSend("PATCH", `/orders/${groupNext}/status`, { status: nextStatus });
       } else if (itemNext !== undefined) {
         await apiSend("PATCH", `/orders/${group}/items/${itemNext}/status`, {
