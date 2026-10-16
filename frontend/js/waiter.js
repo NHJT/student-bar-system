@@ -12,6 +12,7 @@ const DELIVER_REASON = (m) => `完成後 ${m} 分鐘未送達`;
 
 document.addEventListener("DOMContentLoaded", () => {
   const tableSelect = document.getElementById("table-number");
+  const categorySelect = document.getElementById("category-select");
   const drinkSelect = document.getElementById("drink-select");
   const addForm = document.getElementById("add-item-form");
   const qtyValue = document.getElementById("quantity-value");
@@ -44,24 +45,55 @@ document.addEventListener("DOMContentLoaded", () => {
     tableSelect.add(new Option(tableLabel(value), value))
   );
 
+  // 兩段式選酒：先選基酒分類，飲料選單只列該分類的酒。
+  // 兩個選單都會在重繪時盡量保留原本的選擇（經理改酒單時會透過 WebSocket 重繪）。
+  function renderCategories() {
+    const keep = categorySelect.value;
+    const categories = sortedCategories(availableDrinks);
+    categorySelect.innerHTML = "";
+    categories.forEach((c) => {
+      const count = availableDrinks.filter((d) => d.category === c).length;
+      categorySelect.add(new Option(`${c}（${count}）`, c));
+    });
+    if (categories.includes(keep)) categorySelect.value = keep;
+  }
+
+  function drinksInCategory() {
+    return availableDrinks.filter((d) => d.category === categorySelect.value);
+  }
+
+  function renderDrinks() {
+    const keep = drinkSelect.value;
+    const list = drinksInCategory();
+    drinkSelect.innerHTML = "";
+    // 分類已經在上面選過了，這裡不用再重複標分類
+    list.forEach((d) => drinkSelect.add(new Option(d.name, d.id)));
+    if (list.some((d) => String(d.id) === keep)) drinkSelect.value = keep;
+  }
+
   async function loadDrinks() {
     const drinks = await apiGet("/drinks");
     availableDrinks = drinks.filter((d) => d.is_available);
-    const keep = drinkSelect.value;
-    drinkSelect.innerHTML = "";
-    availableDrinks.forEach((d) =>
-      drinkSelect.add(new Option(`${d.name}（${d.category}）`, d.id))
-    );
-    if (availableDrinks.some((d) => String(d.id) === keep)) drinkSelect.value = keep;
+    renderCategories();
+    renderDrinks();
   }
 
+  categorySelect.addEventListener("change", renderDrinks);
+
+  // 修改訂單的那一列空間有限，不拆成兩個選單，改用 optgroup 分組
   function drinkOptions(selectedId) {
-    return availableDrinks
-      .map(
-        (d) =>
-          `<option value="${d.id}" ${d.id === selectedId ? "selected" : ""}>
-             ${escapeHtml(d.name)}（${escapeHtml(d.category)}）</option>`
-      )
+    return sortedCategories(availableDrinks)
+      .map((cat) => {
+        const options = availableDrinks
+          .filter((d) => d.category === cat)
+          .map(
+            (d) =>
+              `<option value="${d.id}" ${d.id === selectedId ? "selected" : ""}>
+                 ${escapeHtml(d.name)}</option>`
+          )
+          .join("");
+        return `<optgroup label="${escapeHtml(cat)}">${options}</optgroup>`;
+      })
       .join("");
   }
 

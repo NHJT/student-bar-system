@@ -17,6 +17,27 @@ const TABLE_COUNT = 13;
 // 不是桌子的出餐位置，排在桌 1 之前。桌號在資料庫裡是文字，直接存這些字
 const NON_TABLE_SEATS = ["吧台", "站位", "外帶"];
 
+// 基酒分類的顯示順序（drinks.category）。
+// API 是依字母排序，但點單時依基酒排比較好找；不在這份清單裡的
+// （例如經理自己新增的分類）照字母接在後面，不會不見
+const CATEGORY_ORDER = [
+  "GIN BASE",
+  "VODKA BASE",
+  "RUM BASE",
+  "TEQUILA BASE",
+  "WHISKEY BASE",
+  "OTHERS",
+  "SIGNATURE",
+];
+
+// 取出這批飲品實際有的分類，依上面的順序排好
+function sortedCategories(drinks) {
+  const seen = [...new Set(drinks.map((d) => d.category))];
+  const known = CATEGORY_ORDER.filter((c) => seen.includes(c));
+  const rest = seen.filter((c) => !CATEGORY_ORDER.includes(c)).sort();
+  return [...known, ...rest];
+}
+
 // 點餐選單用的完整桌號清單
 function tableOptions() {
   return [
