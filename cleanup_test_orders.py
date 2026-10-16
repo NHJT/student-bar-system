@@ -18,7 +18,7 @@
 
 刪除範圍
 --------
-1. placed_at 早於 2026-10-16 18:45（Asia/Taipei）的 order_groups，
+1. placed_at 早於 2026-10-16 18:59（Asia/Taipei）的 order_groups，
    以及這些訂單底下的 order_items
 2. historical_orders 與 daily_summary 中 business_date 早於 2026-10-16 的資料
    （含 9/13 那批測試資料）
@@ -40,7 +40,7 @@ from sqlalchemy.engine import Connection
 # 刪除界線。寫死在這裡是刻意的：一次性腳本，不給參數調整以免誤用。
 # 時間帶明確的 +08:00，不依賴連線的 session timezone，換台機器跑結果一樣。
 # ---------------------------------------------------------------------------
-ORDER_CUTOFF = "2026-10-16 18:45:00+08:00"  # placed_at 早於這個時刻的訂單
+ORDER_CUTOFF = "2026-10-16 18:59:00+08:00"  # placed_at 早於這個時刻的訂單
 HISTORY_CUTOFF = "2026-10-16"  # business_date 早於這一天的歷史資料
 
 _PARAMS = {"cutoff": ORDER_CUTOFF, "hist": HISTORY_CUTOFF}
