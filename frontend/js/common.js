@@ -65,16 +65,19 @@ const ANDON_THRESHOLDS = {
 // 這是純顯示用的，和 ANDON_THRESHOLDS 無關，不會觸發紅底、彈窗或警示音。
 const TOTAL_WAIT_WARN = 20;
 
-// 從下單到現在的總分鐘數
-function totalWaitMinutes(placedAt) {
+// 從下單到現在（或到 endedAt）的總分鐘數。
+// 已送達的訂單等待已經結束，要凍結在送達當下，不能繼續往上跳。
+function totalWaitMinutes(placedAt, endedAt) {
   if (!placedAt) return null;
-  return Math.max(0, (Date.now() - new Date(placedAt).getTime()) / 60000);
+  const end = endedAt ? new Date(endedAt).getTime() : Date.now();
+  return Math.max(0, (end - new Date(placedAt).getTime()) / 60000);
 }
 
-// 把一張卡片上的「總等 N 分」更新好（卡片上要有 data-placed 與 .total-wait）
+// 把一張卡片上的「總等 N 分」更新好。
+// 卡片上要有 data-placed 與 .total-wait；已結束的另外帶 data-ended。
 function renderTotalWait(li) {
   const el = li.querySelector(".total-wait");
-  const minutes = totalWaitMinutes(li.dataset.placed);
+  const minutes = totalWaitMinutes(li.dataset.placed, li.dataset.ended);
   if (!el || minutes == null) return;
   el.textContent = `總等 ${Math.floor(minutes)} 分`;
   el.classList.toggle("total-wait-warn", minutes >= TOTAL_WAIT_WARN);

@@ -314,6 +314,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // 總等待時間（下單到現在）。純顯示，不碰上面的超時判斷與警示音。
   function updateTotalWait() {
     deliverList.querySelectorAll("li[data-id]").forEach(renderTotalWait);
+    orderList.querySelectorAll("li[data-order]").forEach(renderTotalWait);
   }
 
   deliverList.addEventListener("click", async (e) => {
@@ -387,10 +388,17 @@ document.addEventListener("DOMContentLoaded", () => {
     return o.payment_status === "paid" && o.status === "delivered";
   }
 
+  // 已送達的訂單等待已經結束，帶上 data-ended 讓總等待時間凍結在送達當下
+  function waitAttrs(o) {
+    return `data-placed="${escapeHtml(o.placed_at)}"` +
+      (o.delivered_at ? ` data-ended="${escapeHtml(o.delivered_at)}"` : "");
+  }
+
   function settledRow(o) {
     const open = expandedSettled.has(o.id);
     return `
-      <li data-order="${o.id}" class="order-settled ${open ? "open" : ""}">
+      <li data-order="${o.id}" class="order-settled ${open ? "open" : ""}"
+          ${waitAttrs(o)}>
         <button class="settled-row" data-toggle-settled="${o.id}"
                 aria-expanded="${open}">
           <span class="settled-caret">${open ? "▴" : "▾"}</span>
@@ -398,6 +406,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <span class="order-summary">${o.total_quantity} 杯</span>
           <span class="badge badge-paid">已付款</span>
           <span class="order-time">${formatTime(o.placed_at)}</span>
+          <span class="total-wait"></span>
           ${totalLabel(o)}
         </button>
         ${open ? itemLines(o) : ""}
@@ -408,7 +417,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (isSettled(o)) return settledRow(o);
     const editable = o.status === "new"; // 進入製作後就不能改了
     return `
-      <li data-order="${o.id}" class="${o.payment_status === "unpaid" ? "order-unpaid" : ""}">
+      <li data-order="${o.id}" class="${o.payment_status === "unpaid" ? "order-unpaid" : ""}"
+          ${waitAttrs(o)}>
         <div class="order-row">
           <strong>${escapeHtml(tableLabel(o.table_number))}</strong>
           <span class="order-summary">${o.item_count} 品項 / ${o.total_quantity} 杯</span>
@@ -418,6 +428,7 @@ document.addEventListener("DOMContentLoaded", () => {
           </span>
           ${o.edit_count > 0 ? `<span class="badge badge-edited">已改 ${o.edit_count} 次</span>` : ""}
           <span class="order-time">${formatTime(o.placed_at)}</span>
+          <span class="total-wait"></span>
           ${totalLabel(o)}
           ${o.payment_status === "unpaid"
             ? `<button class="btn btn-small btn-primary" data-pay="${o.id}">標記付款</button>`
@@ -480,6 +491,7 @@ document.addEventListener("DOMContentLoaded", () => {
     orderList.innerHTML = sorted.length
       ? sorted.map(orderRow).join("")
       : '<li class="placeholder">尚無訂單</li>';
+    updateTotalWait();
   }
 
   async function openEditor(id) {
