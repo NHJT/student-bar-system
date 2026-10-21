@@ -11,6 +11,7 @@
 
 ## 腳本
 - 一次性腳本預設 dry-run，加 `--execute` 才真的寫入。
+- `export_recipes.py`：唯讀匯出酒單／酒譜／原料成 CSV，只做 SELECT，不會改資料庫。
 
 ## 機密
 - 不得在輸出、檔案、commit 中出現連線字串、token、密碼。連線一律從環境變數 `DATABASE_URL` 讀。

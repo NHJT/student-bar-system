@@ -8,6 +8,9 @@ venv/
 .env
 .env.local
 
+# export_recipes.py 的輸出，隨時可以重跑，不進版控
+exports/
+
 # 舊版 SQLite 遺留檔案
 *.db
 *.sqlite3
