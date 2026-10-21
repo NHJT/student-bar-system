@@ -554,7 +554,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function orderRow(o) {
     if (isSettled(o)) return settledRow(o);
-    const editable = o.status === "new"; // 進入製作後就不能改了
+    // 品項進入製作後就不能改了；桌號到送達前都還能改（客人換位子）
+    const editable = o.status === "new";
+    const canEditTable = o.status !== "delivered";
     return `
       <li data-order="${o.id}" class="${o.payment_status === "unpaid" ? "order-unpaid" : ""}"
           ${waitAttrs(o)}>
@@ -572,26 +574,49 @@ document.addEventListener("DOMContentLoaded", () => {
           ${o.payment_status === "unpaid"
             ? `<button class="btn btn-small btn-primary" data-pay="${o.id}">標記付款</button>`
             : ""}
+          ${canEditTable
+            ? `<button class="btn btn-small btn-ghost" data-edit="${o.id}">${
+                editable ? "修改" : "改桌號"
+              }</button>`
+            : ""}
           ${editable
-            ? `<button class="btn btn-small btn-ghost" data-edit="${o.id}">修改</button>
-               <button class="btn btn-small btn-danger" data-cancel="${o.id}">取消訂單</button>`
+            ? `<button class="btn btn-small btn-danger" data-cancel="${o.id}">取消訂單</button>`
             : ""}
         </div>
         ${itemLines(o)}
       </li>`;
   }
 
-  // 編輯模式：整張訂單的品項就地變成可編輯清單
+  function tableSelectOptions(selected) {
+    return tableOptions()
+      .map(
+        (v) => `<option value="${escapeHtml(v)}" ${v === selected ? "selected" : ""}>${
+          escapeHtml(tableLabel(v))
+        }</option>`
+      )
+      .join("");
+  }
+
+  // 編輯模式：整張訂單的品項就地變成可編輯清單。
+  // 已經開始製作的訂單只開放改桌號，品項區塊整個不渲染。
   function editRow(o) {
+    const canEditItems = o.status === "new";
     return `
       <li data-order="${o.id}" class="editing">
         <div class="edit-form">
-          <strong>${escapeHtml(tableLabel(o.table_number))}　修改訂單 #${o.id}</strong>
-          <div id="edit-items">
-            ${o.items.map((i) => editItemRow(i)).join("")}
-          </div>
+          <strong>${canEditItems ? "修改訂單" : "改桌號"} #${o.id}</strong>
+          <label class="field">桌號
+            <select id="edit-table">${tableSelectOptions(o.table_number)}</select>
+          </label>
+          ${canEditItems
+            ? `<div id="edit-items">
+                 ${o.items.map((i) => editItemRow(i)).join("")}
+               </div>`
+            : '<p class="edit-hint">已經開始製作，只能改桌號。</p>'}
           <div class="edit-actions">
-            <button class="btn btn-small btn-ghost" data-add-item="${o.id}">＋ 新增品項</button>
+            ${canEditItems
+              ? `<button class="btn btn-small btn-ghost" data-add-item="${o.id}">＋ 新增品項</button>`
+              : ""}
             <button class="btn btn-small btn-primary" data-save="${o.id}">儲存修改</button>
             <button class="btn btn-small btn-ghost" data-discard="${o.id}">放棄</button>
           </div>
@@ -637,8 +662,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function openEditor(id) {
     const order = await apiGet(`/orders/${id}`);
-    if (order.status !== "new") {
-      alert("這筆訂單已進入製作，無法修改");
+    if (order.status === "delivered" || order.status === "cancelled") {
+      alert("這筆訂單已經送達或取消，無法修改");
       return refreshOrders();
     }
     editingId = id;
@@ -697,18 +722,24 @@ document.addEventListener("DOMContentLoaded", () => {
         await apiSend("PATCH", `/orders/${cancel}/status`, { status: "cancelled" });
         await refreshOrders();
       } else if (save) {
-        const items = [...document.querySelectorAll("#edit-items [data-edit-item]")].map(
-          (row) => ({
+        const payload = {
+          table_number: document.getElementById("edit-table").value,
+        };
+        // 已開始製作的訂單沒有品項區塊，這時只送桌號
+        const rows = [...document.querySelectorAll("#edit-items [data-edit-item]")];
+        if (rows.length) {
+          const items = rows.map((row) => ({
             drink_id: Number(row.querySelector('[data-field="drink"]').value),
             quantity: Number(row.querySelector('[data-field="quantity"]').value),
             special_request: row.querySelector('[data-field="special"]').value.trim() || null,
-          })
-        );
-        if (items.some((i) => !(i.quantity >= 1))) {
-          alert("每個品項的數量至少為 1");
-          return;
+          }));
+          if (items.some((i) => !(i.quantity >= 1))) {
+            alert("每個品項的數量至少為 1");
+            return;
+          }
+          payload.items = items;
         }
-        await apiSend("PATCH", `/orders/${save}`, { items });
+        await apiSend("PATCH", `/orders/${save}`, payload);
         await closeEditor();
       }
     } catch (err) {

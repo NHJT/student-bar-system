@@ -37,6 +37,10 @@ STAGE_ORDER = ["new", "preparing", "completed", "delivered"]
 
 # 「退回上一個狀態」的對照。刻意另外列一份而不是放寬 ALLOWED_TRANSITIONS，
 # 前進的規則完全不受影響，而且退回一次只能退一步，不能任意跳。
+# 還能改桌號的狀態：送到客人手上（或取消）之後就不能再改了。
+# 品項的限制更嚴，只有 new 能改，見 edit_order。
+EDITABLE_TABLE_STATUSES = {"new", "preparing", "completed"}
+
 REVERT_TARGET = {
     "preparing": "new",
     "completed": "preparing",
@@ -243,17 +247,45 @@ async def create_order(payload: OrderCreate, db: Connection = Depends(get_db)):
     return order
 
 
+def _items_differ(current: list[dict], incoming: list[OrderItemIn]) -> bool:
+    """送出的品項和訂單現有的內容是不是真的不一樣。
+
+    只看飲品、數量、備註三件事，順序不算差異（同樣兩杯調換位置不是修改）。
+    備註的空字串和 None 視為相同，免得前端送 "" 就被當成改過。
+    """
+
+    def key(drink_id, quantity, note):
+        # 備註統一成字串，None 和 "" 一樣，排序時也才不會拿 None 去比字串
+        return (drink_id, quantity, (note or "").strip())
+
+    now = sorted(
+        key(i["drink_id"], i["quantity"], i["special_request"]) for i in current
+    )
+    new = sorted(key(i.drink_id, i.quantity, i.special_request) for i in incoming)
+    return now != new
+
+
 @router.patch("/{group_id}")
 async def edit_order(
     group_id: int, payload: OrderEdit, db: Connection = Depends(get_db)
 ):
-    """服務生修改訂單（桌號／品項），只有還沒進入製作的訂單可以改。
+    """服務生修改訂單（桌號／品項）。
 
-    每次修改 edit_count + 1，作為輸入錯誤率的量測依據。
+    品項只有還沒進入製作的訂單可以改（庫存已經扣了，吧台也可能開始調了）；
+    桌號到送達前都還能改——客人換位子跟服務生按錯一樣常見，而且改桌號不影響
+    庫存與製作內容。
+
+    edit_count 是輸入錯誤率的量測依據，所以只有品項或備註真的變了才 +1：
+    單純把客人換個位子不算服務生填錯。同一次連品項一起改就照常 +1。
     帶了 items 就整組取代，庫存先全部退回再依新內容重扣。
     """
     order = _get_or_404(db, group_id)
-    if order["status"] != "new":
+    if payload.items is not None and order["status"] != "new":
+        raise HTTPException(
+            status_code=409,
+            detail=f"訂單已是「{order['status']}」狀態，品項無法再修改",
+        )
+    if order["status"] not in EDITABLE_TABLE_STATUSES:
         raise HTTPException(
             status_code=409,
             detail=f"訂單已是「{order['status']}」狀態，無法修改",
@@ -262,6 +294,10 @@ async def edit_order(
     fields = payload.model_dump(exclude_unset=True)
     if not fields:
         raise HTTPException(status_code=400, detail="沒有要修改的欄位")
+
+    items_changed = payload.items is not None and _items_differ(
+        order["items"], payload.items
+    )
 
     affected: list[int] = []
     if payload.items is not None:
@@ -274,14 +310,17 @@ async def edit_order(
         )
         _insert_items(db, group_id, payload.items)
 
-    sets = ["edit_count = edit_count + 1"]
+    sets = []
     params = {"id": group_id}
+    if items_changed:
+        sets.append("edit_count = edit_count + 1")
     if payload.table_number is not None:
         sets.append("table_number = :table_number")
         params["table_number"] = payload.table_number
-    db.execute(
-        text(f"UPDATE order_groups SET {', '.join(sets)} WHERE id = :id"), params
-    )
+    if sets:  # 只改桌號又送出同一組品項時，這裡可能完全沒有要更新的欄位
+        db.execute(
+            text(f"UPDATE order_groups SET {', '.join(sets)} WHERE id = :id"), params
+        )
     db.commit()
 
     updated = _get_or_404(db, group_id)
