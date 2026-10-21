@@ -183,8 +183,12 @@ form input, form select,
 .order-queue li .card-action {
   display: flex; align-items: center; gap: .5rem; justify-content: flex-end;
   margin-top: .6rem;
+  /* 窄螢幕時整顆按鈕換到下一列，不要把按鈕內的文字擠成兩行 */
+  flex-wrap: wrap;
 }
-.order-queue li .card-action .elapsed { margin-right: auto; }
+.order-queue li .card-action button { white-space: nowrap; }
+.order-queue li .card-action .elapsed { margin-right: 0; }
+.order-queue li .card-action .total-wait { margin-right: auto; }
 
 /* ---------- 服務生：就地修改訂單 ---------- */
 .edit-item {
@@ -298,7 +302,24 @@ form input, form select,
   padding: 0 .6rem .4rem 1.6rem;
 }
 .order-time { color: var(--muted); font-size: .8rem; margin-left: auto; }
-.order-note { margin-top: .35rem; font-size: .85rem; color: var(--muted); }
+/* 備註：做大、橘底深字、獨佔一行貼在品項名稱下面。
+   吧台漏看備註的代價很高，所以不藏在小字或圖示裡。
+   沒有備註時不會產生這個元素（渲染端是條件式的），不會多出空白。 */
+.order-note {
+  display: block;
+  flex: 0 0 100%;          /* .bar-item / .order-item-line 是 flex，要強制換行獨佔一列 */
+  width: 100%;
+  margin-top: .3rem;
+  padding: .3rem .55rem;
+  background: #fff1dd;
+  color: #8a4a00;
+  border-left: 4px solid var(--warning);
+  border-radius: 4px;
+  font-size: .95rem;       /* 原本 .85rem，比品項名稱還大一點 */
+  font-weight: 600;
+  line-height: 1.45;
+  word-break: break-word;  /* 長備註在手機上要能折行，不能撐破卡片 */
+}
 /* 訂單總額：和時間並排，數字要比周邊明顯一點（這一欄的重點是收錢） */
 .order-total { font-size: .85rem; font-weight: 700; color: var(--text); }
 
@@ -432,6 +453,10 @@ form input, form select,
 }
 .order-queue li.overdue .elapsed { color: var(--danger); font-weight: 700; }
 .elapsed { color: var(--muted); }
+/* 總等待時間（placed_at 到現在）。和「已等 X / Y 分」並列，不取代它。
+   純顯示用，不影響 Andon 的紅底／彈窗／警示音。 */
+.total-wait { color: var(--muted); font-size: .8rem; white-space: nowrap; }
+.total-wait.total-wait-warn { color: var(--danger); font-weight: 700; }
 
 @keyframes andon-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(217, 65, 65, .45); }

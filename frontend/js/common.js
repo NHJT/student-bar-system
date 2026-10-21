@@ -61,6 +61,25 @@ const ANDON_THRESHOLDS = {
   completed: 10, // 完成後未送達
 };
 
+// 總等待時間（placed_at 到現在）變警示色的門檻，單位分鐘。
+// 這是純顯示用的，和 ANDON_THRESHOLDS 無關，不會觸發紅底、彈窗或警示音。
+const TOTAL_WAIT_WARN = 20;
+
+// 從下單到現在的總分鐘數
+function totalWaitMinutes(placedAt) {
+  if (!placedAt) return null;
+  return Math.max(0, (Date.now() - new Date(placedAt).getTime()) / 60000);
+}
+
+// 把一張卡片上的「總等 N 分」更新好（卡片上要有 data-placed 與 .total-wait）
+function renderTotalWait(li) {
+  const el = li.querySelector(".total-wait");
+  const minutes = totalWaitMinutes(li.dataset.placed);
+  if (!el || minutes == null) return;
+  el.textContent = `總等 ${Math.floor(minutes)} 分`;
+  el.classList.toggle("total-wait-warn", minutes >= TOTAL_WAIT_WARN);
+}
+
 // Andon 計時基準：各狀態從「進入該狀態」的時間開始算
 const ANDON_REF_FIELD = {
   new: "placed_at",

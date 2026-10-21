@@ -220,7 +220,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <span class="bar-item-name">${escapeHtml(item.drink_name)} × ${item.quantity}</span>
         ${statusBadge(item.status)}
         ${item.special_request
-          ? `<span class="order-note">📝 ${escapeHtml(item.special_request)}</span>`
+          ? `<span class="order-note">備註：${escapeHtml(item.special_request)}</span>`
           : ""}
         ${canDeliver
           ? `<button class="btn btn-revert" data-item-revert="${item.id}"
@@ -239,6 +239,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return `
       <li data-id="${order.id}" data-status="${order.status}" data-ref="${ref}"
           data-table="${escapeHtml(order.table_number)}"
+          data-placed="${escapeHtml(order.placed_at)}"
           data-summary="${escapeHtml(order.summary)}">
         <div class="order-row card-head">
           <strong>${escapeHtml(tableLabel(order.table_number))}</strong>
@@ -250,7 +251,7 @@ document.addEventListener("DOMContentLoaded", () => {
           ${order.items
             .map(
               (i) => `<div class="card-item-brief">${escapeHtml(i.drink_name)} × ${i.quantity}${
-                i.special_request ? ` <span class="order-note">📝 ${escapeHtml(i.special_request)}</span>` : ""
+                i.special_request ? `<span class="order-note">備註：${escapeHtml(i.special_request)}</span>` : ""
               }</div>`
             )
             .join("")}
@@ -260,6 +261,7 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
         <div class="card-action">
           <span class="elapsed"></span>
+          <span class="total-wait"></span>
           <button class="btn btn-revert" data-group-revert="${order.id}"
                   title="退回上一個狀態">${REVERT_LABEL}</button>
           <button class="btn btn-small btn-ghost" data-expand="${order.id}">
@@ -279,6 +281,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ? pending.map(deliverCard).join("") // API 已依 placed_at 排序，先完成的先送
       : '<li class="placeholder">目前沒有待送達的訂單</li>';
     updateAndon();
+    updateTotalWait();
   }
 
   // Andon：待送達停留超過門檻就整張變紅、跳視窗、響警示音。
@@ -306,6 +309,11 @@ document.addEventListener("DOMContentLoaded", () => {
       showModal(fresh);
       playAlarm();
     }
+  }
+
+  // 總等待時間（下單到現在）。純顯示，不碰上面的超時判斷與警示音。
+  function updateTotalWait() {
+    deliverList.querySelectorAll("li[data-id]").forEach(renderTotalWait);
   }
 
   deliverList.addEventListener("click", async (e) => {
@@ -366,7 +374,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <span>${escapeHtml(i.drink_name)} × ${i.quantity}</span>
           ${statusBadge(i.status)}
           ${i.special_request
-            ? `<span class="order-note">📝 ${escapeHtml(i.special_request)}</span>`
+            ? `<span class="order-note">備註：${escapeHtml(i.special_request)}</span>`
             : ""}
         </div>`
       )
@@ -571,4 +579,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Andon 每 10 秒重算一次（不用重抓資料，只更新等待時間與變紅）
   setInterval(updateAndon, 10000);
+  // 總等待時間同一個節奏更新（10 秒一次，至少每分鐘會跳一次數字）
+  setInterval(updateTotalWait, 10000);
 });
