@@ -11,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from backend import inventory
-from backend.database import get_db, row_to_dict, rows_to_dicts
+from backend.database import get_db, row_to_dict, rows_to_dicts, table_exists
 from backend.models import (
     OrderCreate,
     OrderEdit,
@@ -37,8 +37,16 @@ STAGE_ORDER = ["new", "preparing", "completed", "delivered"]
 
 # 「退回上一個狀態」的對照。刻意另外列一份而不是放寬 ALLOWED_TRANSITIONS，
 # 前進的規則完全不受影響，而且退回一次只能退一步，不能任意跳。
-# delivered 不在裡面：外場已經確認送達，不開放退回。
-REVERT_TARGET = {"preparing": "new", "completed": "preparing"}
+REVERT_TARGET = {
+    "preparing": "new",
+    "completed": "preparing",
+    # 已送達也可以退，但只限當日訂單（見 _ensure_same_day），
+    # 以免動到已經結算過的日子
+    "delivered": "completed",
+}
+
+# 只有從這些狀態退回時才檢查是不是當日訂單
+REVERT_TODAY_ONLY = {"delivered"}
 
 # 進入某狀態時要蓋上的時間戳欄位
 STATUS_TIMESTAMP = {
@@ -74,9 +82,35 @@ def _items_of(db: Connection, group_ids: list[int]) -> dict[int, list[dict]]:
     return grouped
 
 
+def _reverts_of(db: Connection, group_ids: list[int]) -> dict[int, int]:
+    """一次撈出多張訂單被退回過幾次（唯讀，只讀 order_events）。
+
+    外場的待送達卡片用它顯示「已退回」標記。
+
+    這是訂單查詢的必經之路，而 order_events 是後來才加的表。還沒跑過
+    init_db.py 的資料庫沒有這張表，所以先用 to_regclass 探一次路：表不在
+    就當成沒人退回過，訂單照常列出，只是少了「已退回」標記。
+    不用 try/except 接——PostgreSQL 一旦報錯，整個交易就變成 aborted，
+    後面的查詢全部跟著失敗，吞掉例外救不回來。
+    """
+    if not group_ids or not table_exists(db, "order_events"):
+        return {}
+    rows = db.execute(
+        text(
+            "SELECT group_id, COUNT(*) AS n FROM order_events "
+            "WHERE event_type = 'revert' AND group_id = ANY(:ids) "
+            "GROUP BY group_id"
+        ),
+        {"ids": group_ids},
+    ).fetchall()
+    return {r.group_id: r.n for r in rows}
+
+
 def _with_items(db: Connection, groups: list[dict]) -> list[dict]:
     items = _items_of(db, [g["id"] for g in groups])
+    reverts = _reverts_of(db, [g["id"] for g in groups])
     for group in groups:
+        group["revert_count"] = reverts.get(group["id"], 0)
         group["items"] = items.get(group["id"], [])
         group["item_count"] = len(group["items"])
         group["total_quantity"] = sum(i["quantity"] for i in group["items"])
@@ -299,13 +333,26 @@ def _revert_target(status: str) -> str:
     """回傳可以退回的上一個狀態；不能退就直接回 409。"""
     target = REVERT_TARGET.get(status)
     if target is None:
-        detail = (
-            "已送達的訂單不能退回"
-            if status == "delivered"
-            else f"「{status}」沒有可以退回的上一個狀態"
+        raise HTTPException(
+            status_code=409, detail=f"「{status}」沒有可以退回的上一個狀態"
         )
-        raise HTTPException(status_code=409, detail=detail)
     return target
+
+
+def _ensure_same_day(db: Connection, group_id: int, status: str) -> None:
+    """已送達的訂單只允許當日退回，避免改到已經結算過的資料。"""
+    if status not in REVERT_TODAY_ONLY:
+        return
+    today = db.execute(
+        text(
+            "SELECT placed_at::date = NOW()::date FROM order_groups WHERE id = :id"
+        ),
+        {"id": group_id},
+    ).scalar()
+    if not today:
+        raise HTTPException(
+            status_code=409, detail="只有當日的訂單可以從「已送達」退回"
+        )
 
 
 def _log_revert(
@@ -321,15 +368,23 @@ def _log_revert(
 
     這是獨立的誤觸追蹤，不會動到 order_groups.edit_count
     （那個算的是服務生的輸入錯誤率，兩個指標不要混在一起）。
+
+    這張表是後來才加的，沒跑過 init_db.py 的資料庫沒有它。退回一定要留紀錄，
+    所以這裡不像 _reverts_of 那樣默默略過，而是明說要跑 migration。
     """
+    if not table_exists(db, "order_events"):
+        raise HTTPException(
+            status_code=503,
+            detail="資料庫還沒有 order_events 表，請先執行 init_db.py 再使用退回功能",
+        )
     db.execute(
         text(
             """
             INSERT INTO order_events
                 (group_id, item_id, event_type, from_status, to_status,
-                 prev_started_at, prev_completed_at, actor)
+                 prev_started_at, prev_completed_at, prev_delivered_at, actor)
             VALUES (:group_id, :item_id, 'revert', :from_status, :to_status,
-                    :prev_started_at, :prev_completed_at, :actor)
+                    :prev_started_at, :prev_completed_at, :prev_delivered_at, :actor)
             """
         ),
         {
@@ -339,6 +394,7 @@ def _log_revert(
             "to_status": to_status,
             "prev_started_at": before.get("started_at"),
             "prev_completed_at": before.get("completed_at"),
+            "prev_delivered_at": before.get("delivered_at"),
             "actor": actor,
         },
     )
@@ -354,6 +410,7 @@ async def revert_status(group_id: int, db: Connection = Depends(get_db)):
     order = _get_or_404(db, group_id)
     current = order["status"]
     target = _revert_target(current)
+    _ensure_same_day(db, group_id, current)
 
     # 走在前面的品項一起退回來，落後的維持原狀
     db.execute(
@@ -385,6 +442,7 @@ async def revert_item_status(
 
     current = item["status"]
     target = _revert_target(current)
+    _ensure_same_day(db, group_id, current)
     db.execute(
         text("UPDATE order_items SET status = :status WHERE id = :id"),
         {"status": target, "id": item_id},

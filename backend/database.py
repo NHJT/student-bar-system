@@ -127,6 +127,10 @@ _MIGRATIONS = [
     # 兩者都允許為空（未定價 / 這個欄位出現之前的舊訂單）
     ("drinks", "price", "INTEGER"),
     ("order_items", "unit_price", "INTEGER"),
+    # 歷史訂單的備註（結算時組起來的文字）
+    ("historical_orders", "notes", "TEXT"),
+    # 從「已送達」退回時，被清掉的送達時間
+    ("order_events", "prev_delivered_at", "TIMESTAMPTZ"),
     # 配方數字的來源註記（換算估值 vs 酒譜原始數字）
     ("recipes", "note", "TEXT"),
 ]
@@ -136,7 +140,7 @@ def _migrate(conn: Connection) -> None:
     for table, column, definition in _MIGRATIONS:
         # 這些欄位是為了升級舊資料庫才留著的。新建的資料庫沒有 orders 這張表
         # （已拆成 order_groups / order_items），ALTER 下去會直接噴 UndefinedTable。
-        if not _table_exists(conn, table):
+        if not table_exists(conn, table):
             continue
         exists = conn.execute(
             text(
@@ -151,7 +155,9 @@ def _migrate(conn: Connection) -> None:
             )
 
 
-def _table_exists(conn: Connection, table: str) -> bool:
+def table_exists(conn: Connection, table: str) -> bool:
+    """這張表在不在。to_regclass 只查系統目錄，查不到回 NULL 而不會報錯，
+    所以可以拿來先探路，不會把交易打成 aborted 狀態。"""
     return bool(
         conn.execute(
             text("SELECT to_regclass(:name)"), {"name": f"public.{table}"}
@@ -192,18 +198,22 @@ def pending_migrations() -> list[str]:
     try:
         with engine.connect() as conn:
             for table in _TEXT_SEAT_TABLES:
-                if _table_exists(conn, table) and _column_type(
+                if table_exists(conn, table) and _column_type(
                     conn, table, "table_number"
                 ) in _INT_TYPES:
                     notes.append(f"{table}.table_number 還是數字，存不下「吧台」等文字桌號")
-            if _table_exists(conn, "ingredients") and not _column_exists(
+            if table_exists(conn, "ingredients") and not _column_exists(
                 conn, "ingredients", "is_unlimited"
             ):
                 notes.append("ingredients 還沒有 is_unlimited 欄位，無法標記無限制供應")
-            if _table_exists(conn, "order_items") and not _column_exists(
+            if table_exists(conn, "order_items") and not _column_exists(
                 conn, "order_items", "unit_price"
             ):
                 notes.append("order_items 還沒有 unit_price 欄位，下單會失敗")
+            if table_exists(conn, "order_groups") and not table_exists(
+                conn, "order_events"
+            ):
+                notes.append("還沒有 order_events 表，退回上一個狀態會失敗")
     except Exception:  # 連不上資料庫時交給呼叫端既有的錯誤處理
         return []
     return notes
@@ -217,7 +227,7 @@ def _data_migrations(conn: Connection) -> list[str]:
     # 既有的數字會原樣轉成字串（5 → '5'），不會遺失也不會補零；
     # table_number 上沒有索引、外鍵或 view，所以只是單純的欄位型別轉換。
     for table in _TEXT_SEAT_TABLES:
-        if _table_exists(conn, table) and _column_type(
+        if table_exists(conn, table) and _column_type(
             conn, table, "table_number"
         ) in _INT_TYPES:
             rows = conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
@@ -231,7 +241,7 @@ def _data_migrations(conn: Connection) -> list[str]:
 
     # 一張訂單多品項：舊的 orders 每一筆轉成「一張訂單 + 一個品項」。
     # 沿用原本的 id，historical_orders.order_id 才對得上。
-    if _table_exists(conn, "orders"):
+    if table_exists(conn, "orders"):
         pending = conn.execute(text("SELECT COUNT(*) FROM orders")).scalar()
         already = conn.execute(text("SELECT COUNT(*) FROM order_groups")).scalar()
         if pending and not already:
@@ -272,7 +282,7 @@ def _data_migrations(conn: Connection) -> list[str]:
         done.append("舊的 orders 表已更名為 orders_backup（確認無誤後可自行刪除）")
 
     # historical_orders：單一飲品欄位改為品項摘要
-    if _table_exists(conn, "historical_orders") and _column_exists(
+    if table_exists(conn, "historical_orders") and _column_exists(
         conn, "historical_orders", "drink_name"
     ):
         conn.execute(

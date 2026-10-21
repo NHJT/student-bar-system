@@ -1,0 +1,4 @@
+# 只有跑測試才需要，部署不會裝這些（Procfile 讀的是 requirements.txt）
+-r requirements.txt
+pytest>=8
+httpx>=0.27          # fastapi.testclient 需要

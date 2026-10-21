@@ -58,6 +58,13 @@ document.addEventListener("DOMContentLoaded", () => {
               .join("")}</div>`
           : '<span class="placeholder">當天沒有售出紀錄</span>'}
 
+        <h3 class="history-subtitle">逐筆訂單</h3>
+        <div class="order-detail" data-orders="${day.business_date}">
+          ${day.raw_orders > 0
+            ? '<span class="placeholder">載入中…</span>'
+            : '<span class="placeholder">這一天結算時還沒有保留原始訂單</span>'}
+        </div>
+
         <div class="history-actions">
           ${day.raw_orders > 0
             ? `<a class="btn btn-small btn-primary"
@@ -71,6 +78,56 @@ document.addEventListener("DOMContentLoaded", () => {
                </span>`}
         </div>
       </div>`;
+  }
+
+  // 逐筆訂單表格。資料來源 historical_orders，純唯讀，不寫入任何東西。
+  const COLS = [
+    ["#", (o) => o.order_id],
+    ["桌號", (o) => escapeHtml(tableLabel(o.table_number))],
+    ["品項", (o) => escapeHtml(o.items || "—").replaceAll(" | ", "<br>")],
+    ["備註", (o) => (o.notes ? escapeHtml(o.notes).replaceAll(" | ", "<br>") : "—")],
+    ["點單", (o) => formatTime(o.placed_at) || "—"],
+    ["開始", (o) => formatTime(o.started_at) || "—"],
+    ["完成", (o) => formatTime(o.completed_at) || "—"],
+    ["送達", (o) => formatTime(o.delivered_at) || "—"],
+    ["付款", (o) => (o.payment_status === "paid" ? "已付款" : "未付款")],
+    ["付款時間", (o) => formatTime(o.payment_completed_at) || "—"],
+    ["修改次數", (o) => o.modify_count ?? 0],
+    ["狀態", (o) =>
+      o.status === "cancelled"
+        ? '<span class="badge badge-cancelled">已取消</span>'
+        : STATUS_LABELS[o.status] ?? o.status],
+  ];
+
+  function orderTable(orders) {
+    if (!orders.length) return '<span class="placeholder">這一天沒有原始訂單紀錄</span>';
+    return `
+      <div class="table-scroll">
+        <table class="history-table">
+          <thead><tr>${COLS.map(([h]) => `<th>${h}</th>`).join("")}</tr></thead>
+          <tbody>
+            ${orders
+              .map((o) => `<tr class="${o.status === "cancelled" ? "row-cancelled" : ""}">
+                ${COLS.map(([, get]) => `<td>${get(o)}</td>`).join("")}
+              </tr>`)
+              .join("")}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  // 點開才抓，避免一次載入 90 天的明細
+  const loadedOrders = new Set();
+  async function loadOrders(box) {
+    const day = box.dataset.orders;
+    if (loadedOrders.has(day)) return;
+    loadedOrders.add(day);
+    try {
+      box.innerHTML = orderTable(await apiGet(`/history/${encodeURIComponent(day)}/orders`));
+    } catch (err) {
+      loadedOrders.delete(day);
+      box.innerHTML = `<span class="placeholder">讀取失敗：${escapeHtml(err.message)}</span>`;
+    }
   }
 
   async function load() {
@@ -98,6 +155,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const item = row.closest(".history-item");
     const panel = item.querySelector(".history-detail");
     panel.hidden = !panel.hidden;
+    if (!panel.hidden) {
+      const box = panel.querySelector("[data-orders]");
+      if (box && box.querySelector(".placeholder")?.textContent.includes("載入中")) {
+        loadOrders(box);
+      }
+    }
     row.querySelector(".history-toggle").textContent = panel.hidden ? "展開 ▾" : "收合 ▴";
     item.classList.toggle("open", !panel.hidden);
   }

@@ -235,6 +235,36 @@ form input, form select,
 .sound-hint { font-size: .8rem; color: var(--warning); margin-right: .75rem; }
 .queue-col h2 small { color: var(--muted); font-weight: 400; font-size: .75rem; }
 
+/* 歷史頁的逐筆訂單表格（唯讀） */
+.history-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+.history-table th, .history-table td {
+  padding: .35rem .5rem; border-bottom: 1px solid var(--border);
+  text-align: left; vertical-align: top; white-space: nowrap;
+}
+.history-table th { color: var(--muted); font-weight: 600; }
+/* 品項與備註可能很長，這兩欄允許折行 */
+.history-table td:nth-child(3), .history-table td:nth-child(4) {
+  white-space: normal; min-width: 8rem;
+}
+.history-table tr.row-cancelled td { background: #fafafa; color: var(--muted); }
+.order-detail { margin-bottom: .75rem; }
+
+/* 吧台第四區塊「已完成／已送達」：預設收合，標題本身就是開關 */
+.done-toggle {
+  background: none; border: none; padding: 0; font: inherit; color: inherit;
+  cursor: pointer; display: inline-flex; align-items: center; gap: .4rem;
+}
+.done-toggle:hover { color: var(--primary); }
+.done-panel h2 { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.done-panel h2 small { color: var(--muted); font-weight: 400; font-size: .75rem; }
+/* 四個階段的時間，小字一行排開，手機放不下就折行 */
+.stage-times {
+  display: flex; flex-wrap: wrap; gap: .25rem .9rem;
+  margin-top: .5rem; padding-top: .45rem; border-top: 1px dashed var(--border);
+  font-size: .78rem; color: var(--muted);
+}
+.stage-times b { font-weight: 600; color: var(--text); margin-right: .2rem; }
+
 /* 服務生頁版面：
    電腦 ─ 左邊整欄是點餐，右欄上為待送達、下為本場訂單／付款
    手機 ─ 單欄，待送達排最前面（DOM 順序就是手機順序）
@@ -364,6 +394,8 @@ form input, form select,
 /* 無限制供應（當天現買、不扣庫存）：顏色比照「已付款」的中性綠，
    和庫存不足的橘底區隔開，不要看起來像警示 */
 .badge-unlimited { background: #eef1f6; color: var(--muted); }
+/* 曾經被退回上一步的訂單（外場待送達用，避免服務生以為是新完成的） */
+.badge-reverted { background: #fdeeee; color: var(--danger); }
 .row-unlimited td { background: #fbfcfe; color: var(--muted); }
 .row-unlimited td:first-child { color: var(--text); }
 .stock-na { color: var(--muted); }

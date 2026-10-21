@@ -97,7 +97,7 @@ _UPSERT = text(
 _SNAPSHOT_ORDERS = text(
     """
     INSERT INTO historical_orders (
-        business_date, order_id, table_number, items, item_count, quantity, status,
+        business_date, order_id, table_number, items, notes, item_count, quantity, status,
         placed_at, started_at, completed_at, delivered_at,
         payment_status, payment_completed_at, is_modified, modify_count
     )
@@ -106,6 +106,12 @@ _SNAPSHOT_ORDERS = text(
                                        ORDER BY i.id)
                      FROM order_items i JOIN drinks d ON d.id = i.drink_id
                      WHERE i.group_id = g.id), ''),
+           -- 各品項的備註組成一串，沒寫備註的品項略過；整張都沒有就是 NULL
+           (SELECT string_agg(d.name || ':' || i.special_request, ' | ' ORDER BY i.id)
+            FROM order_items i JOIN drinks d ON d.id = i.drink_id
+            WHERE i.group_id = g.id
+              AND i.special_request IS NOT NULL
+              AND btrim(i.special_request) <> ''),
            (SELECT COUNT(*) FROM order_items i WHERE i.group_id = g.id),
            (SELECT COALESCE(SUM(i.quantity), 0) FROM order_items i
             WHERE i.group_id = g.id),

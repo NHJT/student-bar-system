@@ -130,6 +130,7 @@ class Order(BaseModel):
     item_count: int
     total_quantity: int
     edit_count: int = 0
+    revert_count: int = 0  # 被退回過幾次（唯讀，給前端顯示標記用）
     status: str  # new / preparing / completed / delivered / cancelled
     payment_status: str  # unpaid / paid
     payment_completed_at: Optional[str] = None

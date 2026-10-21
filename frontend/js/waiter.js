@@ -245,6 +245,9 @@ document.addEventListener("DOMContentLoaded", () => {
           <strong>${escapeHtml(tableLabel(order.table_number))}</strong>
           <span class="card-count">${order.item_count} 品項 / ${order.total_quantity} 杯</span>
           ${mixed ? '<span class="badge badge-preparing">品項進度不一</span>' : ""}
+          ${order.revert_count > 0
+            ? `<span class="badge badge-reverted" title="這張訂單曾經被退回上一步">↩ 已退回</span>`
+            : ""}
           <span class="order-time">${formatTime(order.placed_at)}</span>
         </div>
         <div class="card-items" ${open ? "hidden" : ""}>

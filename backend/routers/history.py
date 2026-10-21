@@ -38,6 +38,28 @@ def list_history(db: Connection = Depends(get_db)):
     }
 
 
+@router.get("/{business_date}/orders")
+def list_history_orders(business_date: str, db: Connection = Depends(get_db)):
+    """該營業日的逐筆歷史訂單。唯讀，只有 SELECT，不寫入任何東西。
+
+    資料來源是 historical_orders，欄位與 CSV 下載完全相同。
+    notes 是結算當下組出來的備註；這個欄位出現之前結算的日子會是 null。
+    """
+    try:
+        day = date.fromisoformat(business_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="日期格式應為 YYYY-MM-DD")
+    return rows_to_dicts(
+        db.execute(
+            text(
+                f"SELECT {', '.join(col for _, col in _CSV_COLUMNS)} "
+                "FROM historical_orders WHERE business_date = :d ORDER BY order_id"
+            ),
+            {"d": day},
+        )
+    )
+
+
 @router.get("/{business_date}")
 def get_history(business_date: str, db: Connection = Depends(get_db)):
     row = db.execute(
@@ -54,6 +76,7 @@ _CSV_COLUMNS = [
     ("order_id", "order_id"),
     ("table_number", "table_number"),
     ("items", "items"),
+    ("notes", "notes"),
     ("item_count", "item_count"),
     ("quantity", "quantity"),
     ("status", "status"),

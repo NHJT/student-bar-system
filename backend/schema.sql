@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS order_events (
     -- 退回前訂單上的時間戳，退回時會被清掉，留在這裡才查得回來
     prev_started_at   TIMESTAMPTZ,
     prev_completed_at TIMESTAMPTZ,
+    prev_delivered_at TIMESTAMPTZ,
     -- 系統目前沒有登入機制，分不出是誰按的，只能記下是哪一頁送出的
     actor             TEXT        NOT NULL DEFAULT 'bar',
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -118,6 +119,9 @@ CREATE TABLE IF NOT EXISTS historical_orders (
     order_id             INTEGER     NOT NULL,  -- order_groups.id
     table_number         TEXT        NOT NULL,
     items                TEXT        NOT NULL,  -- 例: "Negroni x2 | Gin Tonic x1"
+    -- 各品項的備註，例: "Negroni:少冰 | 苡銨特調:偏酸"。沒有備註的品項不列入，
+    -- 整張都沒備註就是 NULL。這個欄位加進來之前結算的日子一律是 NULL。
+    notes                TEXT,
     item_count           INTEGER     NOT NULL,  -- 品項數
     quantity             INTEGER     NOT NULL,  -- 總杯數
     status               TEXT        NOT NULL,  -- 需要它才能區分已取消與未完成的訂單

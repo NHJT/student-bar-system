@@ -11,7 +11,9 @@ Python + FastAPI + PostgreSQL 後端，原生 HTML/CSS/JavaScript 前端，WebSo
 Procfile           # Railway/Heroku 啟動指令
 railway.toml       # Railway 部署設定
 init_db.py         # 部署後手動執行的資料表初始化腳本
-cleanup_test_data.py # 一次性：清除測試訂單與測試日期的歷史資料（預設只預覽）
+cleanup_test_orders.py   # 一次性：清除測試訂單與歷史資料（預設只盤點，--execute 才刪）
+backfill_history_notes.py # 一次性：把已結算日子的備註補回 historical_orders.notes
+set_drink_prices.py      # 一次性：批次設定酒單價格
 backend/
   main.py          # FastAPI 進入點（含 WebSocket 端點、靜態檔掛載）
   database.py      # SQLAlchemy 連線（讀 DATABASE_URL）與資料表初始化
@@ -88,6 +90,25 @@ Railway Postgres 服務的**公開**連線字串 `DATABASE_PUBLIC_URL`（主機�
 內部才解析得到，從自己的電腦連會失敗。
 
 打開 http://localhost:8000 選擇角色頁面。API 文件在 http://localhost:8000/docs。
+
+### 跑測試
+
+測試需要一個**可以整個清空**的資料庫，用另一個環境變數指定，和
+`DATABASE_URL` 分開，避免誤刪平常在用的資料。資料庫名稱一定要含有 `test`，
+不然測試會直接拒絕執行。沒設定這個變數就整批跳過。
+
+```bash
+pip install -r requirements-dev.txt
+createdb studentbar_test
+export TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5432/studentbar_test
+python -m pytest
+```
+
+```bat
+REM 命令提示字元 (cmd)
+set TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5432/studentbar_test
+python -m pytest
+```
 
 ## 部署到 Railway
 
