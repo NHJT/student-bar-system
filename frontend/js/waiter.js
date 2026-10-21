@@ -12,6 +12,12 @@ const DELIVER_REASON = (m) => `完成後 ${m} 分鐘未送達`;
 // 待送達在角色分工時搬到這一頁，所以「退回製作中」也放在這裡
 const REVERT_LABEL = "↩ 退回製作中";
 
+// 已完成／已送達區塊的退回按鈕文字。退回已送達只限當日訂單，後端會擋
+const DONE_REVERT_LABEL = {
+  completed: "↩ 退回製作中",
+  delivered: "↩ 退回待送達",
+};
+
 document.addEventListener("DOMContentLoaded", () => {
   const tableSelect = document.getElementById("table-number");
   const categorySelect = document.getElementById("category-select");
@@ -29,6 +35,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const deliverList = document.getElementById("queue-completed");
   const deliverCount = document.getElementById("deliver-count");
   const unpaidCount = document.getElementById("unpaid-count");
+  const doneList = document.getElementById("queue-done");
+  const doneToggle = document.getElementById("done-toggle");
+  const doneCaret = document.getElementById("done-caret");
+  const doneCount = document.getElementById("done-count");
 
   let availableDrinks = []; // 供修改表單重建下拉選單
   let cart = []; // 本次訂單的品項：{drink_id, drink_name, quantity, special_request}
@@ -37,10 +47,21 @@ document.addEventListener("DOMContentLoaded", () => {
   let pendingRefresh = false; // 編輯期間收到的更新，等編輯結束再套用
   const expandedDeliver = new Set(); // 待送達卡片展開狀態，重繪後要保持
   const expandedSettled = new Set(); // 已結清訂單被點開的，重繪後要保持
+  // 已完成／已送達區塊自己一份：同一張完成的單在待送達也看得到，
+  // 兩邊共用的話展開一邊會連另一邊一起展開
+  const expandedDone = new Set();
+  let doneOpen = false; // 整個區塊預設收合
   const alerted = new Set(); // 已經跳過超時提醒的訂單，key = 訂單id:狀態
 
   setupAudioUnlock();
   const showModal = setupAndonModal();
+
+  doneToggle.addEventListener("click", () => {
+    doneOpen = !doneOpen;
+    doneList.hidden = !doneOpen;
+    doneCaret.textContent = doneOpen ? "▾" : "▸";
+    doneToggle.setAttribute("aria-expanded", String(doneOpen));
+  });
 
   // 出餐位置：吧台、站位排在桌 1 ~ 13 之前
   tableOptions().forEach((value) =>
@@ -287,6 +308,121 @@ document.addEventListener("DOMContentLoaded", () => {
     updateTotalWait();
   }
 
+  // ---------------- 已完成／已送達（當日，回頭核對用） ----------------
+  // 這一區只負責「看」和「退回」，不再有往前推進的按鈕——
+  // 還沒送出的單在上面的待送達區處理，不要有兩個地方都按得到「已送出」。
+
+  function stageTimes(order) {
+    const rows = [
+      ["點單", order.placed_at],
+      ["開始", order.started_at],
+      ["完成", order.completed_at],
+      ["送達", order.delivered_at],
+    ];
+    return `<div class="stage-times">${rows
+      .map(([label, ts]) =>
+        `<span><b>${label}</b> ${ts ? formatTime(ts) : "—"}</span>`)
+      .join("")}</div>`;
+  }
+
+  function doneItemRow(order, item) {
+    return `
+      <div class="bar-item item-done">
+        <span class="bar-item-name">${escapeHtml(item.drink_name)} × ${item.quantity}</span>
+        ${statusBadge(item.status)}
+        ${item.special_request
+          ? `<span class="order-note">備註：${escapeHtml(item.special_request)}</span>`
+          : ""}
+        ${DONE_REVERT_LABEL[item.status]
+          ? `<button class="btn btn-revert" data-item-revert="${item.id}"
+                data-group="${order.id}"
+                title="退回上一個狀態">${DONE_REVERT_LABEL[item.status]}</button>`
+          : ""}
+      </div>`;
+  }
+
+  function doneCard(order) {
+    const open = expandedDone.has(order.id);
+    const mixed = new Set(order.items.map((i) => i.status)).size > 1;
+    // 用 waitAttrs：已送達的總等待時間凍結在送達當下，
+    // 和下面付款清單同一張單顯示的數字才會一致
+    return `
+      <li data-id="${order.id}" data-status="${order.status}" ${waitAttrs(order)}>
+        <div class="order-row card-head">
+          <strong>${escapeHtml(tableLabel(order.table_number))}</strong>
+          <span class="card-count">${order.item_count} 品項 / ${order.total_quantity} 杯</span>
+          ${statusBadge(order.status)}
+          ${mixed ? '<span class="badge badge-preparing">品項進度不一</span>' : ""}
+          ${order.revert_count > 0
+            ? `<span class="badge badge-reverted" title="這張訂單曾經被退回上一步">↩ 已退回</span>`
+            : ""}
+          <span class="order-time">${formatTime(order.placed_at)}</span>
+        </div>
+        <div class="card-items" ${open ? "hidden" : ""}>
+          ${order.items
+            .map(
+              (i) => `<div class="card-item-brief">${escapeHtml(i.drink_name)} × ${i.quantity}${
+                i.special_request ? `<span class="order-note">備註：${escapeHtml(i.special_request)}</span>` : ""
+              }</div>`
+            )
+            .join("")}
+        </div>
+        <div class="bar-items" ${open ? "" : "hidden"}>
+          ${order.items.map((i) => doneItemRow(order, i)).join("")}
+        </div>
+        <div class="card-action">
+          <span class="total-wait"></span>
+          ${DONE_REVERT_LABEL[order.status]
+            ? `<button class="btn btn-revert" data-group-revert="${order.id}"
+                  title="退回上一個狀態">${DONE_REVERT_LABEL[order.status]}</button>`
+            : ""}
+          <button class="btn btn-small btn-ghost" data-expand="${order.id}">
+            ${open ? "收合品項 ▴" : "分項處理 ▾"}
+          </button>
+        </div>
+        ${stageTimes(order)}
+      </li>`;
+  }
+
+  function renderDone(orders) {
+    const done = orders
+      .filter((o) => o.status === "completed" || o.status === "delivered")
+      .reverse(); // 新的在前
+    doneCount.textContent = done.length;
+    doneCount.hidden = done.length === 0;
+    doneList.innerHTML = done.length
+      ? done.map(doneCard).join("")
+      : '<li class="placeholder">本日還沒有完成的訂單</li>';
+    doneList.querySelectorAll("li[data-id]").forEach(renderTotalWait);
+  }
+
+  doneList.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    const { expand, group, groupRevert, itemRevert } = btn.dataset;
+
+    if (expand !== undefined) {
+      const id = Number(expand);
+      expandedDone.has(id) ? expandedDone.delete(id) : expandedDone.add(id);
+      await refreshOrders();
+      return;
+    }
+    try {
+      if (groupRevert !== undefined) {
+        // 誤觸要能快速修正，所以不做二次確認
+        await apiSend("PATCH", `/orders/${groupRevert}/revert`);
+      } else if (itemRevert !== undefined) {
+        await apiSend("PATCH", `/orders/${group}/items/${itemRevert}/revert`);
+      } else {
+        return;
+      }
+      await refreshOrders();
+    } catch (err) {
+      alert(`退回失敗：${err.message}`);
+      await refreshOrders(); // 可能被別台裝置先更新了，重抓一次
+    }
+  });
+
   // Andon：待送達停留超過門檻就整張變紅、跳視窗、響警示音。
   // 門檻與計時基準都沿用 common.js，和原本吧台頁的那一類完全相同。
   function updateAndon() {
@@ -478,6 +614,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const orders = await apiGet("/orders");
     // 待送達永遠要更新：服務生在改單時，吧台可能正好完成了另一張
     renderDeliver(orders);
+    // 已完成／已送達只取當日，否則會把開店至今所有訂單都列出來
+    renderDone(await apiGet("/orders?today=true"));
     // 下方清單在編輯中不重繪，避免使用者打到一半的內容被蓋掉
     if (editingId !== null) {
       pendingRefresh = true;

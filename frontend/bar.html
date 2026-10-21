@@ -28,21 +28,6 @@
     </section>
   </main>
 
-  <!-- 已完成／已送達：只列當日（?today=true），預設收合。
-       做完的單不再消失，吧台可以回頭核對，也能退回上一步。 -->
-  <main class="layout-one-col">
-    <section class="panel done-panel">
-      <h2>
-        <button id="done-toggle" class="done-toggle" aria-expanded="false">
-          <span id="done-caret">▸</span> ✅ 已完成／已送達
-        </button>
-        <span id="done-count" class="count-badge" hidden>0</span>
-        <small>本日，新的在前</small>
-      </h2>
-      <ul id="queue-done" class="order-queue" hidden></ul>
-    </section>
-  </main>
-
   <!-- Andon 超時跳出視窗 -->
   <div id="andon-modal" class="modal-backdrop" hidden>
     <div class="modal" role="alertdialog" aria-labelledby="andon-modal-title">

@@ -274,16 +274,19 @@ form input, form select,
   grid-template-columns: 1fr 1fr;
   grid-template-areas:
     "order deliver"
-    "order paylist";
+    "order paylist"
+    "done  done";
   align-items: start;
 }
 .waiter-layout .deliver-panel { grid-area: deliver; }
 .waiter-layout .panel-order   { grid-area: order; }
 .waiter-layout .panel-paylist { grid-area: paylist; }
+/* 已完成／已送達擺在最下面整列：預設收合，不跟上面三塊搶位置 */
+.waiter-layout .done-panel    { grid-area: done; }
 @media (max-width: 900px) {
   .waiter-layout {
     grid-template-columns: 1fr;
-    grid-template-areas: "deliver" "order" "paylist";
+    grid-template-areas: "deliver" "order" "paylist" "done";
   }
 }
 

@@ -81,6 +81,19 @@
         <li class="placeholder">尚無訂單</li>
       </ul>
     </section>
+
+    <!-- 已完成／已送達：只列當日（?today=true），預設收合。
+         送出去的單不會消失，可以回頭核對四個階段的時間，也能退回上一步。 -->
+    <section class="panel done-panel">
+      <h2>
+        <button id="done-toggle" class="done-toggle" aria-expanded="false">
+          <span id="done-caret">▸</span> ✅ 已完成／已送達
+        </button>
+        <span id="done-count" class="count-badge" hidden>0</span>
+        <small>本日，新的在前</small>
+      </h2>
+      <ul id="queue-done" class="order-queue" hidden></ul>
+    </section>
   </main>
 
   <!-- Andon 超時跳出視窗（待送達超過門檻時） -->

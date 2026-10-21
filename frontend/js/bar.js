@@ -10,10 +10,10 @@ const NEXT_LABEL = { new: "開始製作 ▶", preparing: "完成 ✓" };
 
 // 超時時的說明文字（不含 completed，那一類改在服務生頁觸發）
 // 可以退回上一個狀態的，對應按鈕文字。delivered 不在裡面（外場已確認送達）
+// delivered 不在裡面：已送達的訂單只出現在服務生頁，退回也在那裡做
 const REVERT_LABEL = {
   preparing: "↩ 退回新訂單",
   completed: "↩ 退回製作中",
-  delivered: "↩ 退回待送達",   // 只限當日訂單，後端會擋
 };
 
 const ANDON_REASON = {
@@ -26,21 +26,8 @@ document.addEventListener("DOMContentLoaded", () => {
     new: document.getElementById("queue-new"),
     preparing: document.getElementById("queue-preparing"),
   };
-  const doneList = document.getElementById("queue-done");
-  const doneToggle = document.getElementById("done-toggle");
-  const doneCaret = document.getElementById("done-caret");
-  const doneCount = document.getElementById("done-count");
-  let doneOpen = false; // 預設收合
-
   setupAudioUnlock();
   const showModal = setupAndonModal();
-
-  doneToggle.addEventListener("click", () => {
-    doneOpen = !doneOpen;
-    doneList.hidden = !doneOpen;
-    doneCaret.textContent = doneOpen ? "▾" : "▸";
-    doneToggle.setAttribute("aria-expanded", String(doneOpen));
-  });
 
   // 已經跳過提醒的訂單，key = 訂單id:狀態（換一站會再提醒一次）
   const alerted = new Set();
@@ -70,19 +57,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // 已完成／已送達的卡片：多列出四個階段的時間，方便事後核對
-  function stageTimes(order) {
-    const rows = [
-      ["點單", order.placed_at],
-      ["開始", order.started_at],
-      ["完成", order.completed_at],
-      ["送達", order.delivered_at],
-    ];
-    return `<div class="stage-times">${rows
-      .map(([label, ts]) =>
-        `<span><b>${label}</b> ${ts ? formatTime(ts) : "—"}</span>`)
-      .join("")}</div>`;
-  }
-
   function card(order) {
     const ref = order[ANDON_REF_FIELD[order.status]] ?? order.placed_at;
     const open = expanded.has(order.id);
@@ -168,11 +142,6 @@ document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".order-queue li[data-id]").forEach(renderTotalWait);
   }
 
-  function doneCard(order) {
-    // 沿用同一張卡片，後面接四個階段的時間
-    return card(order).replace("</li>", `${stageTimes(order)}</li>`);
-  }
-
   async function refresh() {
     // 新訂單／製作中不加日期條件，跨午夜還沒做完的訂單才不會從佇列消失
     const orders = await apiGet("/orders");
@@ -182,21 +151,10 @@ document.addEventListener("DOMContentLoaded", () => {
         ? items.map(card).join("") // API 已依 placed_at 排序，先進先出
         : '<li class="placeholder">－</li>';
     }
-    // 已完成／已送達只取當日，否則會把開店至今所有訂單都列出來
-    const today = await apiGet("/orders?today=true");
-    const done = today
-      .filter((o) => o.status === "completed" || o.status === "delivered")
-      .reverse(); // 新的在前
-    doneCount.textContent = done.length;
-    doneCount.hidden = done.length === 0;
-    doneList.innerHTML = done.length
-      ? done.map(doneCard).join("")
-      : '<li class="placeholder">本日還沒有完成的訂單</li>';
     updateAndon();
     updateTotalWait();
   }
 
-  // 綁在 body：第四區塊在另一個 <main> 裡，綁單一個 main 會接不到
   document.body.addEventListener("click", async (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
