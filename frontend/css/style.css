@@ -89,24 +89,6 @@ form input, form select,
 }
 
 
-/* 數量加減器：手機也好按的大按鈕，最小值 1。
-   寬度收斂，兩顆按鈕不要離太遠，單手拇指構得到 */
-.stepper {
-  display: grid; grid-template-columns: 3.25rem 4.5rem 3.25rem;
-  align-items: stretch; gap: .5rem; margin-top: .25rem;
-}
-.stepper-btn {
-  height: 3rem; border: 1px solid var(--border); border-radius: 8px;
-  background: var(--panel); color: var(--primary);
-  font-size: 1.5rem; line-height: 1; cursor: pointer;
-}
-.stepper-btn:hover:not(:disabled) { border-color: var(--primary); background: #f2f6ff; }
-.stepper-btn:disabled { color: var(--border); cursor: not-allowed; }
-.stepper-value {
-  display: flex; align-items: center; justify-content: center;
-  height: 3rem; border: 1px solid var(--border); border-radius: 8px;
-  font-size: 1.25rem; font-weight: 600;
-}
 .btn {
   padding: .6rem 1.2rem; border: none; border-radius: 8px;
   font-size: 1rem; cursor: pointer;
@@ -133,19 +115,26 @@ form input, form select,
 }
 .cart-row { display: flex; align-items: center; gap: .5rem; }
 .cart-name { flex: 1; font-size: .95rem; }
-/* 車內也用加減器，整個點餐流程都不必打字 */
-.cart-stepper { display: flex; align-items: center; gap: .35rem; }
-.cart-stepper .stepper-btn {
-  width: 2.25rem; height: 2.25rem; font-size: 1.15rem; padding: 0;
-}
-.cart-stepper .cart-qty-value {
-  min-width: 1.75rem; text-align: center; font-weight: 600; font-size: .95rem;
+/* 一列就是一張單，標上序號讓服務生對得出來是第幾杯 */
+.cart-seq {
+  flex: 0 0 auto; min-width: 1.5rem; height: 1.5rem;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: var(--primary); color: #fff;
+  font-size: .75rem; font-weight: 600;
 }
 .cart-note {
   width: 100%; margin-top: .4rem; padding: .3rem .4rem;
   border: 1px solid var(--border); border-radius: 6px; font-size: .85rem;
 }
 /* 送出／清空靠右下，並與上方的「加入訂單」拉開距離 */
+/* 付款清單裡的同桌標題列 */
+.table-group {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  margin-top: .75rem; padding: .45rem .6rem;
+  background: #eef4ff; border-radius: 8px 8px 0 0;
+  border: 1px solid var(--border); border-bottom: none;
+}
+.table-group .order-total { margin-left: auto; }
 .cart-actions {
   display: flex; gap: .5rem; align-items: center; justify-content: flex-end;
   margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border);
@@ -195,7 +184,10 @@ form input, form select,
   display: flex; gap: .4rem; align-items: center; margin-top: .5rem; flex-wrap: wrap;
 }
 .edit-item select { flex: 1 1 9rem; min-width: 7rem; }
-.edit-item input[type="number"] { width: 4.5rem; }
+/* 舊格式多杯訂單的杯數，純顯示不可改 */
+.edit-qty {
+  flex: 0 0 auto; color: var(--muted); font-size: .85rem; font-weight: 600;
+}
 .edit-item input[type="text"] { flex: 1 1 7rem; min-width: 6rem; }
 .edit-item select, .edit-item input {
   margin: 0; padding: .35rem .45rem; border: 1px solid var(--border);

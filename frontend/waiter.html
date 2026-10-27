@@ -44,24 +44,13 @@
           <select id="drink-select" required></select>
         </label>
 
-        <div class="field">
-          <span class="field-label">數量</span>
-          <div class="stepper">
-            <button type="button" class="stepper-btn" id="qty-minus"
-                    aria-label="減少數量">−</button>
-            <span class="stepper-value" id="quantity-value"
-                  aria-live="polite">1</span>
-            <button type="button" class="stepper-btn" id="qty-plus"
-                    aria-label="增加數量">＋</button>
-          </div>
-        </div>
-
         <label class="field">特殊需求
           <input type="text" id="special-request" placeholder="例：少冰、去薄荷">
         </label>
         <button type="submit" class="btn btn-action btn-primary">＋ 加入訂單</button>
       </form>
 
+      <!-- 一杯酒就是一張訂單：購物車裡每一列送出後各自成為一張單 -->
       <h2>本次訂單 <small id="cart-count" class="cart-count"></small></h2>
       <ul id="cart-list" class="cart-list">
         <li class="placeholder">還沒加入任何品項</li>

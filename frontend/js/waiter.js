@@ -12,6 +12,10 @@ const DELIVER_REASON = (m) => `完成後 ${m} 分鐘未送達`;
 // 待送達在角色分工時搬到這一頁，所以「退回製作中」也放在這裡
 const REVERT_LABEL = "↩ 退回製作中";
 
+// 購物車的軟上限：超過這個杯數送出前先問一次。
+// 一杯一張單，按一下就是 N 次下單，誤按的代價比以前高
+const CART_WARN_SIZE = 10;
+
 // 已完成／已送達區塊的退回按鈕文字。退回已送達只限當日訂單，後端會擋
 const DONE_REVERT_LABEL = {
   completed: "↩ 退回製作中",
@@ -23,9 +27,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const categorySelect = document.getElementById("category-select");
   const drinkSelect = document.getElementById("drink-select");
   const addForm = document.getElementById("add-item-form");
-  const qtyValue = document.getElementById("quantity-value");
-  const qtyMinus = document.getElementById("qty-minus");
-  const qtyPlus = document.getElementById("qty-plus");
   const specialInput = document.getElementById("special-request");
   const cartList = document.getElementById("cart-list");
   const cartCount = document.getElementById("cart-count");
@@ -41,8 +42,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const doneCount = document.getElementById("done-count");
 
   let availableDrinks = []; // 供修改表單重建下拉選單
-  let cart = []; // 本次訂單的品項：{drink_id, drink_name, quantity, special_request}
-  let itemQty = 1; // 加減器目前的數量，最小 1
+  let cart = []; // 待送出的杯：{drink_id, drink_name, quantity, special_request}，一列一張單
   let editingId = null; // 正在編輯中的訂單 id
   let pendingRefresh = false; // 編輯期間收到的更新，等編輯結束再套用
   const expandedDeliver = new Set(); // 待送達卡片展開狀態，重繪後要保持
@@ -120,19 +120,13 @@ document.addEventListener("DOMContentLoaded", () => {
       .join("");
   }
 
-  // ---------------- 數量加減器 ----------------
-  function setQty(n) {
-    itemQty = Math.max(1, n); // 不能減到 0 以下
-    qtyValue.textContent = itemQty;
-    qtyMinus.disabled = itemQty <= 1;
-  }
-  qtyMinus.addEventListener("click", () => setQty(itemQty - 1));
-  qtyPlus.addEventListener("click", () => setQty(itemQty + 1));
-
   // ---------------- 本次訂單（購物車） ----------------
+  // 一杯酒就是一張訂單，所以購物車每一列固定一杯，同款點兩次就是兩列。
+  // 送出時一列送一張單，不再把同款合併成 quantity=2。
   function renderCart() {
-    const cups = cart.reduce((n, it) => n + it.quantity, 0);
-    cartCount.textContent = cart.length ? `（${cart.length} 品項 / 共 ${cups} 杯）` : "";
+    cartCount.textContent = cart.length
+      ? `（${cart.length} 杯，將建立 ${cart.length} 張單）`
+      : "";
     submitBtn.disabled = cart.length === 0;
     clearBtn.disabled = cart.length === 0;
 
@@ -142,14 +136,8 @@ document.addEventListener("DOMContentLoaded", () => {
             (it, idx) => `
             <li class="cart-item">
               <div class="cart-row">
+                <span class="cart-seq">${idx + 1}</span>
                 <span class="cart-name">${escapeHtml(it.drink_name)}</span>
-                <span class="cart-stepper">
-                  <button class="stepper-btn" data-step="${idx}" data-delta="-1"
-                          aria-label="減少數量" ${it.quantity <= 1 ? "disabled" : ""}>−</button>
-                  <span class="cart-qty-value">${it.quantity}</span>
-                  <button class="stepper-btn" data-step="${idx}" data-delta="1"
-                          aria-label="增加數量">＋</button>
-                </span>
                 <button class="btn btn-small btn-ghost" data-remove="${idx}">移除</button>
               </div>
               <input type="text" class="cart-note" placeholder="特殊需求"
@@ -164,23 +152,15 @@ document.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
     const drink = availableDrinks.find((d) => String(d.id) === drinkSelect.value);
     if (!drink) return;
-    const quantity = itemQty;
-    const note = specialInput.value.trim() || null;
 
-    // 同一款飲料且需求相同就直接加數量，不另開一列
-    const same = cart.find(
-      (it) => it.drink_id === drink.id && (it.special_request ?? null) === note
-    );
-    if (same) same.quantity += quantity;
-    else
-      cart.push({
-        drink_id: drink.id,
-        drink_name: drink.name,
-        quantity,
-        special_request: note,
-      });
+    // 同款不合併：一列就是一杯，也就是之後的一張單
+    cart.push({
+      drink_id: drink.id,
+      drink_name: drink.name,
+      quantity: 1,
+      special_request: specialInput.value.trim() || null,
+    });
 
-    setQty(1);
     specialInput.value = "";
     renderCart();
   });
@@ -189,13 +169,9 @@ document.addEventListener("DOMContentLoaded", () => {
   cartList.addEventListener("click", (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
-    const { remove, step, delta } = btn.dataset;
-    if (remove !== undefined) {
-      cart.splice(Number(remove), 1);
-    } else if (step !== undefined) {
-      const item = cart[Number(step)];
-      item.quantity = Math.max(1, item.quantity + Number(delta)); // 最少留 1
-    } else return;
+    const { remove } = btn.dataset;
+    if (remove === undefined) return;
+    cart.splice(Number(remove), 1);
     renderCart();
   });
   cartList.addEventListener("change", (e) => {
@@ -212,23 +188,44 @@ document.addEventListener("DOMContentLoaded", () => {
 
   submitBtn.addEventListener("click", async () => {
     if (cart.length === 0) return;
-    submitBtn.disabled = true;
-    try {
-      await apiSend("POST", "/orders", {
-        table_number: tableSelect.value,
-        items: cart.map(({ drink_id, quantity, special_request }) => ({
-          drink_id,
-          quantity,
-          special_request,
-        })),
-      });
-      cart = [];
-      renderCart();
-      await refreshOrders();
-    } catch (err) {
-      alert(`下單失敗：${err.message}`);
-      submitBtn.disabled = false;
+    // 一次點太多杯通常是誤按，送出前確認一下——按下去就是 N 次下單
+    if (cart.length > CART_WARN_SIZE && !confirm(`將建立 ${cart.length} 張單，確定送出？`)) {
+      return;
     }
+    submitBtn.disabled = true;
+
+    // 一列一張單，循序送（不並行）：庫存檢查才不會互相搶，
+    // 同一批的 placed_at 與 id 也會連號，吧台頁自然排在一起。
+    const table = tableSelect.value;
+    let done = 0;
+    let failure = null;
+    for (const { drink_id, quantity, special_request } of cart) {
+      try {
+        await apiSend("POST", "/orders", {
+          table_number: table,
+          items: [{ drink_id, quantity, special_request }],
+        });
+        done += 1;
+      } catch (err) {
+        failure = err.message;
+        break; // 庫存不足之後的杯多半也會失敗，停下來讓服務生決定
+      }
+    }
+
+    // 成立的已經寫進資料庫了，從購物車拿掉；失敗的那杯和後面的留著
+    cart = cart.slice(done);
+    renderCart();
+    await refreshOrders();
+
+    if (failure !== null) {
+      alert(
+        `已成立 ${done} 杯。\n` +
+          `第 ${done + 1} 杯失敗：${failure}\n\n` +
+          `失敗的那杯和後面 ${cart.length - 1} 杯留在購物車裡，` +
+          "可以修改後重送，或移除不要的。"
+      );
+    }
+    submitBtn.disabled = cart.length === 0;
   });
 
   // ---------------- 待送達佇列 ----------------
@@ -632,10 +629,14 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function editItemRow(item) {
+    // 新的單一律一杯，數量不給改；但 10/16 之前的舊單可能是多杯，
+    // 那就把數字原樣帶回去送出，不要被壓成 1 讓杯數憑空消失。
+    const quantity = item?.quantity ?? 1;
     return `
       <div class="edit-item" data-edit-item>
         <select data-field="drink">${drinkOptions(item?.drink_id ?? availableDrinks[0]?.id)}</select>
-        <input type="number" min="1" value="${item?.quantity ?? 1}" data-field="quantity">
+        <input type="hidden" value="${quantity}" data-field="quantity">
+        ${quantity > 1 ? `<span class="edit-qty" title="舊格式的多杯訂單">× ${quantity}</span>` : ""}
         <input type="text" value="${escapeHtml(item?.special_request ?? "")}"
                data-field="special" placeholder="特殊需求">
         <button class="btn btn-small btn-ghost" data-remove-item>移除</button>
@@ -654,17 +655,61 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     const active = orders.filter((o) => o.status !== "cancelled");
-    // 未付款的排最上面（這一欄的重點是收錢），同一組裡新的在前
-    const sorted = active.sort((a, b) => {
-      const rank = (o) => (o.payment_status === "unpaid" ? 0 : 1);
-      return rank(a) - rank(b) || b.id - a.id;
-    });
-    const unpaid = active.filter((o) => o.payment_status === "unpaid").length;
-    unpaidCount.textContent = unpaid ? `${unpaid} 筆未付款` : "全部已收款 ✓";
-    orderList.innerHTML = sorted.length
-      ? sorted.map(orderRow).join("")
+    const unpaidOrders = active.filter((o) => o.payment_status === "unpaid");
+    const paidOrders = active
+      .filter((o) => o.payment_status !== "unpaid")
+      .sort((a, b) => b.id - a.id);
+
+    unpaidCount.textContent = unpaidOrders.length
+      ? `${unpaidOrders.length} 筆未付款`
+      : "全部已收款 ✓";
+
+    // 未付款的依桌分組排在最上面（這一欄的重點是收錢），
+    // 已付款的照舊新的在前。分組只影響顯示順序，不動任何資料。
+    const rows = [
+      ...groupByTable(unpaidOrders).map(
+        (group) =>
+          (group.length > 1 ? tableGroupRow(group) : "") +
+          group.map(orderRow).join("")
+      ),
+      ...paidOrders.map(orderRow),
+    ];
+    orderList.innerHTML = rows.length
+      ? rows.join("")
       : '<li class="placeholder">尚無訂單</li>';
     updateTotalWait();
+  }
+
+  // 同一桌的單收在一起，最近下單的那桌排最前面；桌內新的在前
+  function groupByTable(orders) {
+    const byTable = new Map();
+    for (const o of orders) {
+      if (!byTable.has(o.table_number)) byTable.set(o.table_number, []);
+      byTable.get(o.table_number).push(o);
+    }
+    return [...byTable.values()]
+      .map((group) => group.sort((a, b) => b.id - a.id))
+      .sort((a, b) => b[0].id - a[0].id);
+  }
+
+  // 一桌有兩張以上未付款時多一條標題列：小計加上「整桌標記付款」。
+  // 單張的按鈕照樣留著，同一桌也可能是不同組客人分開付。
+  function tableGroupRow(group) {
+    const totals = group.map(orderTotal);
+    const subtotal = totals.some((t) => t == null)
+      ? "—"
+      : `NT$ ${totals.reduce((sum, t) => sum + t, 0)}`;
+    const cups = group.reduce((n, o) => n + o.total_quantity, 0);
+    return `
+      <li class="table-group">
+        <strong>${escapeHtml(tableLabel(group[0].table_number))}</strong>
+        <span class="order-summary">${group.length} 張單 / ${cups} 杯</span>
+        <span class="order-total">${subtotal}</span>
+        <button class="btn btn-small btn-primary"
+                data-pay-table="${escapeHtml(group[0].table_number)}">
+          整桌標記付款
+        </button>
+      </li>`;
   }
 
   async function openEditor(id) {
@@ -684,11 +729,53 @@ document.addEventListener("DOMContentLoaded", () => {
     await refreshOrders();
   }
 
+  // 整桌標記付款：按下去才重新抓一次訂單，只標記「現在還沒付款」的那幾張。
+  // 這樣重複按不會把已經付款的單再蓋一次 payment_completed_at，
+  // 別台裝置剛好先收了錢也不會被覆寫；中途失敗會說清楚哪幾張沒標到。
+  async function payWholeTable(table, btn) {
+    btn.disabled = true;
+    const fresh = await apiGet("/orders");
+    const pending = fresh.filter(
+      (o) =>
+        o.table_number === table &&
+        o.payment_status === "unpaid" &&
+        o.status !== "cancelled"
+    );
+    if (!pending.length) {
+      await refreshOrders();
+      alert(`${tableLabel(table)} 已經沒有未付款的單了。`);
+      return;
+    }
+
+    const done = [];
+    const failed = [];
+    for (const order of pending) {
+      try {
+        await apiSend("PATCH", `/orders/${order.id}/payment`, {
+          payment_status: "paid",
+        });
+        done.push(order.id);
+      } catch (err) {
+        failed.push(`#${order.id}（${err.message}）`);
+      }
+    }
+    await refreshOrders();
+
+    if (failed.length) {
+      alert(
+        `${tableLabel(table)}：已標記 ${done.length} 張` +
+          (done.length ? `（#${done.join("、#")}）` : "") +
+          `\n未標記 ${failed.length} 張：\n${failed.join("\n")}\n\n` +
+          "沒標到的單還在清單上，可以單張再按一次。"
+      );
+    }
+  }
+
   // 訂單列上的所有動作（事件委派，清單重繪也不會掉監聽）
   orderList.addEventListener("click", async (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
-    const { pay, edit, cancel, save, discard, addItem, removeItem,
+    const { pay, payTable, edit, cancel, save, discard, addItem, removeItem,
             toggleSettled } = btn.dataset;
 
     // 已結清訂單的展開／收合只影響畫面
@@ -720,6 +807,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (pay) {
         await apiSend("PATCH", `/orders/${pay}/payment`, { payment_status: "paid" });
         await refreshOrders();
+      } else if (payTable !== undefined) {
+        await payWholeTable(payTable, btn);
       } else if (edit) {
         await openEditor(edit);
       } else if (discard) {
@@ -756,7 +845,6 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   loadDrinks();
-  setQty(1);
   renderCart();
   // 即時更新：訂單事件刷新訂單列表；經理端改動酒單時同步更新下拉選單；
   // 重連成功時補抓斷線期間的變化
