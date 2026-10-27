@@ -90,6 +90,25 @@ _CSV_COLUMNS = [
     ("modify_count", "modify_count"),
 ]
 
+#: CSV 最後再補一欄，從 table_number 推導出來的送達方式。
+#: 沒有對應的資料表欄位，也不需要 migration——桌號本來就存在歷史紀錄裡，
+#: 舊資料一樣算得出來。前端的判斷在 common.js 的 isBarReachable()。
+_DELIVERED_BY_COLUMN = "delivered_by"
+
+
+def _delivered_by(table_number: str) -> str:
+    """誰把酒送到客人手上：依桌號類別推導。
+
+    吧台（含舊訂單只存「吧台」的）與外帶由調酒師直接遞給客人；
+    站位兩邊都可能送，分不出來就說分不出來，不要猜。
+    """
+    seat = str(table_number or "")
+    if seat.startswith("吧台") or seat == "外帶":
+        return "吧台"
+    if seat == "站位":
+        return "未區分"
+    return "服務生"
+
 
 def _csv_value(value):
     """時間輸出成 Excel 認得的當地時間字串；其餘原樣輸出。"""
@@ -122,11 +141,14 @@ def download_orders_csv(business_date: str, db: Connection = Depends(get_db)):
     if not rows:
         raise HTTPException(status_code=404, detail="這一天沒有原始訂單紀錄")
 
+    table_index = [col for _, col in _CSV_COLUMNS].index("table_number")
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    writer.writerow([title for title, _ in _CSV_COLUMNS])
+    writer.writerow([title for title, _ in _CSV_COLUMNS] + [_DELIVERED_BY_COLUMN])
     for row in rows:
-        writer.writerow([_csv_value(v) for v in row])
+        writer.writerow(
+            [_csv_value(v) for v in row] + [_delivered_by(row[table_index])]
+        )
 
     # 加上 BOM，Excel 開啟時才不會把中文品名顯示成亂碼
     body = "﻿" + buffer.getvalue()

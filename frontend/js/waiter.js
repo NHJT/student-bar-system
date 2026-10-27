@@ -257,6 +257,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const ref = order.completed_at ?? order.placed_at;
     const open = expandedDeliver.has(order.id);
     const mixed = new Set(order.items.map((i) => i.status)).size > 1;
+    // 吧台搆得到的位置提示一下，免得吧台已經遞出去了服務生又跑一趟。
+    // 只是標示，按鈕照樣留著——站位這種兩邊都可能送的，誰按都算數。
+    const barHint = barDeliveryHint(order.table_number);
     return `
       <li data-id="${order.id}" data-status="${order.status}" data-ref="${ref}"
           data-table="${escapeHtml(order.table_number)}"
@@ -266,6 +269,10 @@ document.addEventListener("DOMContentLoaded", () => {
           <strong>${escapeHtml(tableLabel(order.table_number))}</strong>
           <span class="card-count">${order.item_count} 品項 / ${order.total_quantity} 杯</span>
           ${mixed ? '<span class="badge badge-preparing">品項進度不一</span>' : ""}
+          ${barHint
+            ? `<span class="badge badge-bar-deliver"
+                     title="這個位置吧台搆得到，可能已經直接遞給客人了">${barHint}</span>`
+            : ""}
           ${order.revert_count > 0
             ? `<span class="badge badge-reverted" title="這張訂單曾經被退回上一步">↩ 已退回</span>`
             : ""}

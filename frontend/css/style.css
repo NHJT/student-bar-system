@@ -401,6 +401,8 @@ form input, form select,
 .badge-unlimited { background: #eef1f6; color: var(--muted); }
 /* 曾經被退回上一步的訂單（外場待送達用，避免服務生以為是新完成的） */
 .badge-reverted { background: #fdeeee; color: var(--danger); }
+/* 吧台搆得到的位置：提醒服務生這張單可能吧台已經自己送了 */
+.badge-bar-deliver { background: #eef4ff; color: var(--primary); }
 .row-unlimited td { background: #fbfcfe; color: var(--muted); }
 .row-unlimited td:first-child { color: var(--text); }
 .stock-na { color: var(--muted); }

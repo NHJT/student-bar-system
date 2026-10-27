@@ -8,6 +8,11 @@
 const NEXT_STATUS = { new: "preparing", preparing: "completed" };
 const NEXT_LABEL = { new: "開始製作 ▶", preparing: "完成 ✓" };
 
+// 吧台搆得到的位置（吧台／外帶／站位，見 common.js）調完就直接遞給客人，
+// 所以「完成」那一步順手把訂單推到已送達，不用再繞一趟服務生的待送達。
+// 走的是跟服務生頁完全一樣的狀態流程，delivered_at 照常蓋。
+const DELIVER_LABEL = "完成並送出 ✓";
+
 // 超時時的說明文字（不含 completed，那一類改在服務生頁觸發）
 // 可以退回上一個狀態的，對應按鈕文字。delivered 不在裡面（外場已確認送達）
 // delivered 不在裡面：已送達的訂單只出現在服務生頁，退回也在那裡做
@@ -62,6 +67,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const open = expanded.has(order.id);
     // 各品項狀態不一致時提示，讓吧台知道還有品項落後
     const mixed = new Set(order.items.map((i) => i.status)).size > 1;
+    // 只有「完成」那一步會順手送出；開始製作那一步跟平常一樣
+    const selfDeliver = order.status === "preparing" && isBarReachable(order.table_number);
     return `
       <li data-id="${order.id}" data-status="${order.status}" data-ref="${ref}"
           data-table="${escapeHtml(order.table_number)}"
@@ -98,8 +105,9 @@ document.addEventListener("DOMContentLoaded", () => {
           </button>
           ${NEXT_STATUS[order.status]
             ? `<button class="btn btn-small btn-primary" data-group-next="${order.id}"
-                    data-next-status="${NEXT_STATUS[order.status]}">
-                 ${NEXT_LABEL[order.status]}
+                    data-next-status="${NEXT_STATUS[order.status]}"
+                    ${selfDeliver ? "data-also-deliver" : ""}>
+                 ${selfDeliver ? DELIVER_LABEL : NEXT_LABEL[order.status]}
                </button>`
             : ""}
         </div>
@@ -177,6 +185,12 @@ document.addEventListener("DOMContentLoaded", () => {
         await apiSend("PATCH", `/orders/${group}/items/${itemRevert}/revert`);
       } else if (groupNext !== undefined) {
         await apiSend("PATCH", `/orders/${groupNext}/status`, { status: nextStatus });
+        // 吧台自送：完成之後再推一步到已送達。分兩次呼叫是刻意的，
+        // 狀態流程一步一步走，completed_at 與 delivered_at 都會留下。
+        // 第二步萬一失敗，訂單就停在待送達，服務生頁看得到，不會遺失。
+        if (btn.dataset.alsoDeliver !== undefined) {
+          await apiSend("PATCH", `/orders/${groupNext}/status`, { status: "delivered" });
+        }
       } else if (itemNext !== undefined) {
         await apiSend("PATCH", `/orders/${group}/items/${itemNext}/status`, {
           status: nextStatus,

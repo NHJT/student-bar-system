@@ -19,6 +19,24 @@ const TABLE_COUNT = 13;
 // （tableLabel 只判斷是不是純數字，不比對這份清單）。
 const NON_TABLE_SEATS = ["吧台左邊", "吧台中間", "吧台右邊", "站位", "外帶"];
 
+// 吧台搆得到、調酒師可以直接把飲料遞給客人的位置。
+// 用前綴比對而不是等值比對：舊訂單的桌號只存「吧台」，一樣算在內。
+// 站位也列進來——站位的客人吧台和服務生都可能送，兩邊都看得到按鈕，
+// 誰先按「已送達」另一邊就會即時同步（WebSocket），不會重複送。
+function isBarReachable(tableNumber) {
+  const seat = String(tableNumber ?? "");
+  return seat.startsWith("吧台") || seat === "外帶" || seat === "站位";
+}
+
+// 服務生頁的提示文字：吧台／外帶本來就由吧台自己送，站位則是兩邊都可以。
+// null 代表這張單就是服務生負責，不用特別標。
+function barDeliveryHint(tableNumber) {
+  const seat = String(tableNumber ?? "");
+  if (seat.startsWith("吧台") || seat === "外帶") return "🍸 吧台自送";
+  if (seat === "站位") return "🍸 吧台也可送";
+  return null;
+}
+
 // 基酒分類的顯示順序（drinks.category）。
 // API 是依字母排序，但點單時依基酒排比較好找；不在這份清單裡的
 // （例如經理自己新增的分類）照字母接在後面，不會不見
