@@ -28,6 +28,20 @@
     </section>
   </main>
 
+  <!-- 酒譜：只讀，預設收合。點開才抓資料，每次點開都重抓，
+       經理剛改過配方也看得到最新的 -->
+  <main class="layout-one-col">
+    <section class="panel recipe-panel">
+      <h2>
+        <button id="recipe-toggle" class="done-toggle" aria-expanded="false">
+          <span id="recipe-caret">▸</span> 📖 酒譜
+        </button>
+        <small>基本配方，實際依客人與庫存可能不同</small>
+      </h2>
+      <div id="recipe-body" class="recipe-body" hidden></div>
+    </section>
+  </main>
+
   <!-- Andon 超時跳出視窗 -->
   <div id="andon-modal" class="modal-backdrop" hidden>
     <div class="modal" role="alertdialog" aria-labelledby="andon-modal-title">

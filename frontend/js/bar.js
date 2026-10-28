@@ -31,6 +31,11 @@ document.addEventListener("DOMContentLoaded", () => {
     new: document.getElementById("queue-new"),
     preparing: document.getElementById("queue-preparing"),
   };
+  const recipeToggle = document.getElementById("recipe-toggle");
+  const recipeCaret = document.getElementById("recipe-caret");
+  const recipeBody = document.getElementById("recipe-body");
+  let recipeOpen = false; // 酒譜預設收合
+
   setupAudioUnlock();
   const showModal = setupAndonModal();
 
@@ -130,6 +135,60 @@ document.addEventListener("DOMContentLoaded", () => {
     updateAndon();
     updateTotalWait();
   }
+
+  // ---------------- 酒譜（只讀） ----------------
+  // 沒有配方的飲品（特調、無酒精飲料之類）照樣列出來，只是標成「無固定配方」，
+  // 不能讓它們整個從清單消失，不然吧台會以為是漏了。
+  function recipeCard(drink) {
+    const lines = drink.items.length
+      ? drink.items
+          .map(
+            (i) => `
+            <div class="recipe-line">
+              <span class="recipe-ing">${escapeHtml(i.ingredient_name)}</span>
+              <span class="recipe-amount">${i.quantity_needed} ${escapeHtml(i.unit)}</span>
+              ${i.note ? `<span class="recipe-note">${escapeHtml(i.note)}</span>` : ""}
+            </div>`
+          )
+          .join("")
+      : '<div class="recipe-line recipe-none">無固定配方</div>';
+    return `
+      <div class="recipe-card">
+        <div class="recipe-name">${escapeHtml(drink.drink_name)}</div>
+        ${lines}
+      </div>`;
+  }
+
+  async function renderRecipes() {
+    recipeBody.innerHTML = '<p class="placeholder">載入中…</p>';
+    let drinks;
+    try {
+      drinks = await apiGet("/recipes");
+    } catch (err) {
+      recipeBody.innerHTML = `<p class="placeholder">酒譜載入失敗：${escapeHtml(err.message)}</p>`;
+      return;
+    }
+    // 依基酒分類排序，和服務生點餐選單用的是同一份順序
+    recipeBody.innerHTML = sortedCategories(drinks)
+      .map((category) => {
+        const group = drinks.filter((d) => d.category === category);
+        return `
+          <section class="recipe-group">
+            <h3>${escapeHtml(category)} <small>${group.length} 款</small></h3>
+            <div class="recipe-grid">${group.map(recipeCard).join("")}</div>
+          </section>`;
+      })
+      .join("");
+  }
+
+  recipeToggle.addEventListener("click", async () => {
+    recipeOpen = !recipeOpen;
+    recipeBody.hidden = !recipeOpen;
+    recipeCaret.textContent = recipeOpen ? "▾" : "▸";
+    recipeToggle.setAttribute("aria-expanded", String(recipeOpen));
+    // 每次點開都重抓，經理剛改過配方也看得到最新的
+    if (recipeOpen) await renderRecipes();
+  });
 
   document.body.addEventListener("click", async (e) => {
     const btn = e.target.closest("button");

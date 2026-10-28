@@ -243,6 +243,34 @@ form input, form select,
 .done-toggle:hover { color: var(--primary); }
 .done-panel h2 { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
 .done-panel h2 small { color: var(--muted); font-weight: 400; font-size: .75rem; }
+
+/* 吧台頁的酒譜：只讀，預設收合。窄螢幕自動收成單欄 */
+.recipe-panel h2 { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.recipe-panel h2 small { color: var(--muted); font-weight: 400; font-size: .75rem; }
+.recipe-group { margin-top: 1rem; }
+.recipe-group h3 {
+  font-size: .9rem; color: var(--primary);
+  padding-bottom: .3rem; border-bottom: 1px solid var(--border);
+}
+.recipe-group h3 small { color: var(--muted); font-weight: 400; }
+.recipe-grid {
+  display: grid; gap: .6rem; margin-top: .6rem;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+}
+.recipe-card {
+  padding: .6rem .75rem; border: 1px solid var(--border);
+  border-radius: 8px; background: #fbfcfe;
+}
+.recipe-name { font-weight: 600; font-size: .92rem; margin-bottom: .35rem; }
+.recipe-line {
+  display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap;
+  padding: .12rem 0; font-size: .85rem;
+}
+.recipe-ing { flex: 1; }
+.recipe-amount { color: var(--text); font-variant-numeric: tabular-nums; }
+/* 換算估值之類的註記，獨佔一行，不跟份量擠在一起 */
+.recipe-note { flex: 0 0 100%; color: var(--muted); font-size: .75rem; }
+.recipe-none { color: var(--muted); font-style: italic; }
 /* 四個階段的時間，小字一行排開，手機放不下就折行 */
 .stage-times {
   display: flex; flex-wrap: wrap; gap: .25rem .9rem;
