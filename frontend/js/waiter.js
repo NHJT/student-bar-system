@@ -314,6 +314,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ? `<span class="badge badge-reverted" title="這張訂單曾經被退回上一步">↩ 已退回</span>`
             : ""}
           <span class="order-time">${formatTime(order.placed_at)}</span>
+          ${totalLabel(order)}
         </div>
         <div class="card-items">
           ${order.items

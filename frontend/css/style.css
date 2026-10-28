@@ -261,13 +261,13 @@ form input, form select,
   grid-template-areas:
     "order deliver"
     "order paylist"
-    "done  done";
+    "done  .";
   align-items: start;
 }
 .waiter-layout .deliver-panel { grid-area: deliver; }
 .waiter-layout .panel-order   { grid-area: order; }
 .waiter-layout .panel-paylist { grid-area: paylist; }
-/* 已完成／已送達擺在最下面整列：預設收合，不跟上面三塊搶位置 */
+/* 已完成／已送達擺在左下角，點餐區正下方：預設收合，不跟右欄搶位置 */
 .waiter-layout .done-panel    { grid-area: done; }
 @media (max-width: 900px) {
   .waiter-layout {
