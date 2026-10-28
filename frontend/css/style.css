@@ -126,15 +126,12 @@ form input, form select,
   width: 100%; margin-top: .4rem; padding: .3rem .4rem;
   border: 1px solid var(--border); border-radius: 6px; font-size: .85rem;
 }
-/* 送出／清空靠右下，並與上方的「加入訂單」拉開距離 */
-/* 付款清單裡的同桌標題列 */
-.table-group {
-  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
-  margin-top: .75rem; padding: .45rem .6rem;
-  background: #eef4ff; border-radius: 8px 8px 0 0;
-  border: 1px solid var(--border); border-bottom: none;
+/* 購物車每一列的單杯價格，和右邊的移除鈕分開 */
+.cart-price {
+  flex: 0 0 auto; color: var(--muted); font-size: .85rem;
+  font-variant-numeric: tabular-nums;
 }
-.table-group .order-total { margin-left: auto; }
+/* 送出／清空靠右下，並與上方的「加入訂單」拉開距離 */
 .cart-actions {
   display: flex; gap: .5rem; align-items: center; justify-content: flex-end;
   margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border);
@@ -198,6 +195,12 @@ form input, form select,
 }
 /* 已開始製作的訂單只開放改桌號時，說明為什麼看不到品項 */
 .edit-hint { margin: .6rem 0 0; font-size: .85rem; color: var(--muted); }
+/* 改了酒之後金額和已收的錢對不上，要補收或找零時講明白 */
+.edit-hint.edit-money-warn {
+  color: #8a4a00; font-weight: 600;
+  padding: .3rem .55rem; background: #fff1dd;
+  border-left: 4px solid var(--warning); border-radius: 4px;
+}
 .edit-actions { display: flex; gap: .5rem; margin-top: .9rem; }
 .edit-actions .btn { flex: 0 0 auto; }
 
@@ -329,10 +332,15 @@ form input, form select,
 
 /* 本場訂單／付款：版面讓給還要處理的訂單，所以整欄收緊 */
 .pay-count { color: var(--muted); font-weight: 400; font-size: .8rem; }
+.pay-count.pay-count-warn { color: var(--danger); font-weight: 600; }
 .order-list.compact li { padding: .5rem .6rem; margin-bottom: .35rem; }
 .order-list.compact .order-item-line { font-size: .82rem; margin-top: .25rem; }
 /* 未付款是這一欄的重點，左邊給一道標示條 */
-.order-list.compact li.order-unpaid { border-left: 3px solid var(--primary); }
+/* 未付款：新的單建立時就已付款，所以這是舊資料或異常，要醒目到不會被略過 */
+.order-list.compact li.order-unpaid {
+  border-left: 4px solid var(--danger);
+  background: #fff6f6;
+}
 
 /* 已付款又已送達的訂單：預設縮成一行，點整行展開品項 */
 .order-list.compact li.order-settled { padding: 0; background: #fbfcfe; }

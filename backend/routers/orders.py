@@ -138,13 +138,17 @@ def _get_or_404(db: Connection, group_id: int) -> dict:
 def list_orders(
     status: Optional[str] = None,
     table_number: Optional[str] = None,  # 文字桌號：「3」「吧台」「站位」
+    payment_status: Optional[str] = None,  # 'paid' / 'unpaid'
     today: bool = False,
     db: Connection = Depends(get_db),
 ):
-    """訂單列表，可用 ?status=new&table_number=3&today=true 過濾。
+    """訂單列表，可用 ?status=new&table_number=3&payment_status=paid&today=true 過濾。
 
     today=true 只回傳今天下單的訂單，經理儀表板用它做到「每日結算後顯示歸零」；
     吧台與服務生不加這個條件，跨過午夜還沒做完的訂單才不會從佇列消失。
+
+    payment_status 是吧台頁在用的：客人在櫃檯付完錢才點單，所以吧台只做
+    已付款的單。前端也會自己再濾一次，兩邊都擋住。
     """
     conditions, params = [], {}
     if status is not None:
@@ -153,6 +157,13 @@ def list_orders(
     if table_number is not None:
         conditions.append("table_number = :table_number")
         params["table_number"] = table_number
+    if payment_status is not None:
+        if payment_status not in ("paid", "unpaid"):
+            raise HTTPException(
+                status_code=400, detail=f"未知付款狀態: {payment_status}"
+            )
+        conditions.append("payment_status = :payment_status")
+        params["payment_status"] = payment_status
     if today:
         conditions.append("placed_at::date = NOW()::date")
     sql = _SELECT_GROUP
@@ -228,12 +239,21 @@ def _insert_items(db: Connection, group_id: int, items: list[OrderItemIn]) -> No
 
 @router.post("", status_code=201)
 async def create_order(payload: OrderCreate, db: Connection = Depends(get_db)):
+    """建立訂單。客人是在櫃檯付完錢才點單，所以建立即已付款。
+
+    付款狀態和訂單在同一個 INSERT 裡決定，和扣庫存、寫品項同屬一個
+    transaction——不會出現「單建好了但沒標記付款」的半成品，吧台也就不會
+    看到還沒收到錢的單。payment_status / payment_completed_at 兩個欄位沿用
+    原本的，沒有新增欄位，舊訂單的值原封不動。
+    """
     _validate_items(db, payload.items)
     affected = _deduct_items(db, payload.items)
 
     group_id = db.execute(
         text(
-            "INSERT INTO order_groups (table_number) VALUES (:table_number) "
+            "INSERT INTO order_groups "
+            "(table_number, payment_status, payment_completed_at) "
+            "VALUES (:table_number, 'paid', NOW()) "
             "RETURNING id"
         ),
         {"table_number": payload.table_number},

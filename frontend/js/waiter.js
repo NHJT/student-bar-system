@@ -119,10 +119,24 @@ document.addEventListener("DOMContentLoaded", () => {
   // ---------------- 本次訂單（購物車） ----------------
   // 一杯酒就是一張訂單，所以購物車每一列固定一杯，同款點兩次就是兩列。
   // 送出時一列送一張單，不再把同款合併成 quantity=2。
+  // 購物車總額。只要有一杯沒定價就回 null——加總出來一定少算，
+  // 寧可讓服務生看到「金額未定」自己查，也不要給錯的數字去收錢。
+  function cartTotal() {
+    if (cart.some((it) => it.price == null)) return null;
+    return cart.reduce((sum, it) => sum + it.price, 0);
+  }
+
   function renderCart() {
+    const total = cartTotal();
     cartCount.textContent = cart.length
       ? `（${cart.length} 杯，將建立 ${cart.length} 張單）`
       : "";
+    // 客人已經在櫃檯付過錢，按鈕上寫出金額讓服務生按下去前能核對
+    submitBtn.textContent = cart.length
+      ? total == null
+        ? "已收款（金額未定）並送出"
+        : `已收款 $${total} 並送出`
+      : "已收款並送出";
     submitBtn.disabled = cart.length === 0;
     clearBtn.disabled = cart.length === 0;
 
@@ -134,6 +148,7 @@ document.addEventListener("DOMContentLoaded", () => {
               <div class="cart-row">
                 <span class="cart-seq">${idx + 1}</span>
                 <span class="cart-name">${escapeHtml(it.drink_name)}</span>
+                <span class="cart-price">${it.price == null ? "—" : `$${it.price}`}</span>
                 <button class="btn btn-small btn-ghost" data-remove="${idx}">移除</button>
               </div>
               <input type="text" class="cart-note" placeholder="特殊需求"
@@ -154,6 +169,7 @@ document.addEventListener("DOMContentLoaded", () => {
       drink_id: drink.id,
       drink_name: drink.name,
       quantity: 1,
+      price: drink.price ?? null, // 只給畫面核對用，實際金額以後端的快照為準
       special_request: specialInput.value.trim() || null,
     });
 
@@ -540,9 +556,10 @@ document.addEventListener("DOMContentLoaded", () => {
             <select id="edit-table">${tableSelectOptions(o.table_number)}</select>
           </label>
           ${canEditItems
-            ? `<div id="edit-items">
+            ? `<div id="edit-items" data-paid-total="${orderTotal(o) ?? ""}">
                  ${o.items.map((i) => editItemRow(i)).join("")}
-               </div>`
+               </div>
+               <p id="edit-money" class="edit-hint"></p>`
             : '<p class="edit-hint">已經開始製作，只能改桌號。</p>'}
           <div class="edit-actions">
             ${canEditItems
@@ -553,6 +570,38 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         </div>
       </li>`;
+  }
+
+  // 錢已經在建單時收過了，改成不同價格的酒就會跟收到的金額對不上。
+  // 這裡即時算出差額提醒服務生補收或找零，系統本身不碰錢。
+  function updateEditMoney() {
+    const box = document.getElementById("edit-items");
+    const hint = document.getElementById("edit-money");
+    if (!box || !hint) return;
+
+    const paid = box.dataset.paidTotal === "" ? null : Number(box.dataset.paidTotal);
+    const rows = [...box.querySelectorAll("[data-edit-item]")];
+    const prices = rows.map((row) => {
+      const id = Number(row.querySelector('[data-field="drink"]').value);
+      const qty = Number(row.querySelector('[data-field="quantity"]').value) || 1;
+      const drink = availableDrinks.find((d) => d.id === id);
+      return drink?.price == null ? null : drink.price * qty;
+    });
+
+    if (paid == null || prices.some((p) => p == null)) {
+      hint.textContent = "有品項沒有定價，金額差額請自行確認。";
+      hint.classList.remove("edit-money-warn");
+      return;
+    }
+    const now = prices.reduce((sum, p) => sum + p, 0);
+    const diff = now - paid;
+    hint.textContent =
+      diff === 0
+        ? `金額不變：$${now}`
+        : diff > 0
+          ? `原 $${paid} → 現 $${now}，需補收 $${diff}`
+          : `原 $${paid} → 現 $${now}，需找零 $${-diff}`;
+    hint.classList.toggle("edit-money-warn", diff !== 0);
   }
 
   function editItemRow(item) {
@@ -587,56 +636,22 @@ document.addEventListener("DOMContentLoaded", () => {
       .filter((o) => o.payment_status !== "unpaid")
       .sort((a, b) => b.id - a.id);
 
+    // 新的單建立時就是已付款，所以未付款只會是舊資料或異常。
+    // 數量不是零就講清楚，讓服務生知道有單要補處理。
     unpaidCount.textContent = unpaidOrders.length
-      ? `${unpaidOrders.length} 筆未付款`
+      ? `⚠ ${unpaidOrders.length} 筆未付款`
       : "全部已收款 ✓";
+    unpaidCount.classList.toggle("pay-count-warn", unpaidOrders.length > 0);
 
-    // 未付款的依桌分組排在最上面（這一欄的重點是收錢），
-    // 已付款的照舊新的在前。分組只影響顯示順序，不動任何資料。
+    // 未付款的排最上面（要補處理），其餘新的在前
     const rows = [
-      ...groupByTable(unpaidOrders).map(
-        (group) =>
-          (group.length > 1 ? tableGroupRow(group) : "") +
-          group.map(orderRow).join("")
-      ),
+      ...unpaidOrders.sort((a, b) => b.id - a.id).map(orderRow),
       ...paidOrders.map(orderRow),
     ];
     orderList.innerHTML = rows.length
       ? rows.join("")
       : '<li class="placeholder">尚無訂單</li>';
     updateTotalWait();
-  }
-
-  // 同一桌的單收在一起，最近下單的那桌排最前面；桌內新的在前
-  function groupByTable(orders) {
-    const byTable = new Map();
-    for (const o of orders) {
-      if (!byTable.has(o.table_number)) byTable.set(o.table_number, []);
-      byTable.get(o.table_number).push(o);
-    }
-    return [...byTable.values()]
-      .map((group) => group.sort((a, b) => b.id - a.id))
-      .sort((a, b) => b[0].id - a[0].id);
-  }
-
-  // 一桌有兩張以上未付款時多一條標題列：小計加上「整桌標記付款」。
-  // 單張的按鈕照樣留著，同一桌也可能是不同組客人分開付。
-  function tableGroupRow(group) {
-    const totals = group.map(orderTotal);
-    const subtotal = totals.some((t) => t == null)
-      ? "—"
-      : `NT$ ${totals.reduce((sum, t) => sum + t, 0)}`;
-    const cups = group.reduce((n, o) => n + o.total_quantity, 0);
-    return `
-      <li class="table-group">
-        <strong>${escapeHtml(tableLabel(group[0].table_number))}</strong>
-        <span class="order-summary">${group.length} 張單 / ${cups} 杯</span>
-        <span class="order-total">${subtotal}</span>
-        <button class="btn btn-small btn-primary"
-                data-pay-table="${escapeHtml(group[0].table_number)}">
-          整桌標記付款
-        </button>
-      </li>`;
   }
 
   async function openEditor(id) {
@@ -648,6 +663,7 @@ document.addEventListener("DOMContentLoaded", () => {
     editingId = id;
     const li = orderList.querySelector(`li[data-order="${id}"]`);
     if (li) li.outerHTML = editRow(order);
+    updateEditMoney();
   }
 
   async function closeEditor() {
@@ -656,53 +672,16 @@ document.addEventListener("DOMContentLoaded", () => {
     await refreshOrders();
   }
 
-  // 整桌標記付款：按下去才重新抓一次訂單，只標記「現在還沒付款」的那幾張。
-  // 這樣重複按不會把已經付款的單再蓋一次 payment_completed_at，
-  // 別台裝置剛好先收了錢也不會被覆寫；中途失敗會說清楚哪幾張沒標到。
-  async function payWholeTable(table, btn) {
-    btn.disabled = true;
-    const fresh = await apiGet("/orders");
-    const pending = fresh.filter(
-      (o) =>
-        o.table_number === table &&
-        o.payment_status === "unpaid" &&
-        o.status !== "cancelled"
-    );
-    if (!pending.length) {
-      await refreshOrders();
-      alert(`${tableLabel(table)} 已經沒有未付款的單了。`);
-      return;
-    }
-
-    const done = [];
-    const failed = [];
-    for (const order of pending) {
-      try {
-        await apiSend("PATCH", `/orders/${order.id}/payment`, {
-          payment_status: "paid",
-        });
-        done.push(order.id);
-      } catch (err) {
-        failed.push(`#${order.id}（${err.message}）`);
-      }
-    }
-    await refreshOrders();
-
-    if (failed.length) {
-      alert(
-        `${tableLabel(table)}：已標記 ${done.length} 張` +
-          (done.length ? `（#${done.join("、#")}）` : "") +
-          `\n未標記 ${failed.length} 張：\n${failed.join("\n")}\n\n` +
-          "沒標到的單還在清單上，可以單張再按一次。"
-      );
-    }
-  }
-
   // 訂單列上的所有動作（事件委派，清單重繪也不會掉監聽）
+  // 編輯表單換飲品時即時重算金額差額
+  orderList.addEventListener("change", (e) => {
+    if (e.target.matches('[data-field="drink"]')) updateEditMoney();
+  });
+
   orderList.addEventListener("click", async (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
-    const { pay, payTable, edit, cancel, save, discard, addItem, removeItem,
+    const { pay, edit, cancel, save, discard, addItem, removeItem,
             toggleSettled } = btn.dataset;
 
     // 已結清訂單的展開／收合只影響畫面
@@ -718,6 +697,7 @@ document.addEventListener("DOMContentLoaded", () => {
       document
         .getElementById("edit-items")
         .insertAdjacentHTML("beforeend", editItemRow(null));
+      updateEditMoney();
       return;
     }
     if (removeItem !== undefined) {
@@ -727,6 +707,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
       btn.closest("[data-edit-item]").remove();
+      updateEditMoney();
       return;
     }
 
@@ -734,8 +715,6 @@ document.addEventListener("DOMContentLoaded", () => {
       if (pay) {
         await apiSend("PATCH", `/orders/${pay}/payment`, { payment_status: "paid" });
         await refreshOrders();
-      } else if (payTable !== undefined) {
-        await payWholeTable(payTable, btn);
       } else if (edit) {
         await openEditor(edit);
       } else if (discard) {

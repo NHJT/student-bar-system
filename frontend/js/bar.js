@@ -124,10 +124,14 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function refresh() {
-    // 新訂單／製作中不加日期條件，跨午夜還沒做完的訂單才不會從佇列消失
-    const orders = await apiGet("/orders");
+    // 新訂單／製作中不加日期條件，跨午夜還沒做完的訂單才不會從佇列消失。
+    // 只拿已付款的單：客人在櫃檯付完錢才點單，沒收到錢的不該開始調。
+    const orders = await apiGet("/orders?payment_status=paid");
     for (const status of Object.keys(queues)) {
-      const items = orders.filter((o) => o.status === status);
+      // 後端已經濾過一次，這裡再濾一次當第二道防線
+      const items = orders.filter(
+        (o) => o.status === status && o.payment_status === "paid"
+      );
       queues[status].innerHTML = items.length
         ? items.map(card).join("") // API 已依 placed_at 排序，先進先出
         : '<li class="placeholder">－</li>';
