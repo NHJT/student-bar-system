@@ -350,7 +350,7 @@ POST /api/history/settle             立刻結算今天（重複執行會覆蓋�
 
 | 生效日 | 變更內容 | 提出者 | 影響的統計口徑 |
 |---|---|---|---|
-| 部署日（待補） | 服務生端移除數量選擇，**一杯酒就是一張訂單**，新單的 `quantity` 恆為 1；同一桌點多杯會建立多張單 | 現場工作人員 | `total_orders` 變多；`drinks_sold`（總杯數）不變；`avg_prep_minutes`、`max_wait_minutes`、`edit_rate` 的分母變大，與 10/16 之前的資料不可直接比較 |
+| 2026-10-29（部署日） | 服務生端移除數量選擇，**一杯酒就是一張訂單**，新單的 `quantity` 恆為 1；同一桌點多杯會建立多張單 | 現場工作人員 | `total_orders` 變多；`drinks_sold`（總杯數）不變；`avg_prep_minutes`、`max_wait_minutes`、`edit_rate` 的分母變大，與 10/16 之前的資料不可直接比較 |
 | 2026-10-27 | 吧台／外帶／站位的訂單可由吧台一鍵「完成並送出」 | 現場工作人員 | 這類訂單的 `completed_at` 與 `delivered_at` 幾乎同時；CSV 新增推導欄 `delivered_by`（不是資料表欄位） |
 | 2026-10-21 | 只改桌號不再計入修改次數（`edit_count`） | 店主 | `edit_rate` 會略為下降，因為換位子不再算服務生輸入錯誤 |
 | 2026-10-21 | 結算時把各品項備註存進 `historical_orders.notes` | 店主 | 新欄位，這天之前結算的日子一律是 `NULL`；其餘欄位與數字沒有變動 |
