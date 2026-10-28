@@ -36,35 +36,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 已經跳過提醒的訂單，key = 訂單id:狀態（換一站會再提醒一次）
   const alerted = new Set();
-  // 展開中的卡片，重繪後要保持展開
-  const expanded = new Set();
-
-  function itemRow(order, item) {
-    const next = NEXT_STATUS[item.status];
-    return `
-      <div class="bar-item ${item.status === "completed" ? "item-done" : ""}">
-        <span class="bar-item-name">${escapeHtml(item.drink_name)} × ${item.quantity}</span>
-        ${statusBadge(item.status)}
-        ${item.special_request
-          ? `<span class="order-note">備註：${escapeHtml(item.special_request)}</span>`
-          : ""}
-        ${REVERT_LABEL[item.status]
-          ? `<button class="btn btn-revert" data-item-revert="${item.id}"
-                data-group="${order.id}"
-                title="退回上一個狀態">${REVERT_LABEL[item.status]}</button>`
-          : ""}
-        ${next
-          ? `<button class="btn btn-small btn-ghost"
-                data-item-next="${item.id}" data-group="${order.id}"
-                data-next-status="${next}">${NEXT_LABEL[item.status]}</button>`
-          : ""}
-      </div>`;
-  }
-
   // 已完成／已送達的卡片：多列出四個階段的時間，方便事後核對
   function card(order) {
     const ref = order[ANDON_REF_FIELD[order.status]] ?? order.placed_at;
-    const open = expanded.has(order.id);
     // 各品項狀態不一致時提示，讓吧台知道還有品項落後
     const mixed = new Set(order.items.map((i) => i.status)).size > 1;
     // 只有「完成」那一步會順手送出；開始製作那一步跟平常一樣
@@ -81,7 +55,7 @@ document.addEventListener("DOMContentLoaded", () => {
           ${mixed ? '<span class="badge badge-preparing">品項進度不一</span>' : ""}
           <span class="order-time">${formatTime(order.placed_at)}</span>
         </div>
-        <div class="card-items" ${open ? "hidden" : ""}>
+        <div class="card-items">
           ${order.items
             .map(
               (i) => `<div class="card-item-brief">${escapeHtml(i.drink_name)} × ${i.quantity}${
@@ -90,9 +64,6 @@ document.addEventListener("DOMContentLoaded", () => {
             )
             .join("")}
         </div>
-        <div class="bar-items" ${open ? "" : "hidden"}>
-          ${order.items.map((i) => itemRow(order, i)).join("")}
-        </div>
         <div class="card-action">
           <span class="elapsed"></span>
           <span class="total-wait"></span>
@@ -100,9 +71,6 @@ document.addEventListener("DOMContentLoaded", () => {
             ? `<button class="btn btn-revert" data-group-revert="${order.id}"
                   title="退回上一個狀態">${REVERT_LABEL[order.status]}</button>`
             : ""}
-          <button class="btn btn-small btn-ghost" data-expand="${order.id}">
-            ${open ? "收合品項 ▴" : "分項處理 ▾"}
-          </button>
           ${NEXT_STATUS[order.status]
             ? `<button class="btn btn-small btn-primary" data-group-next="${order.id}"
                     data-next-status="${NEXT_STATUS[order.status]}"
@@ -166,23 +134,12 @@ document.addEventListener("DOMContentLoaded", () => {
   document.body.addEventListener("click", async (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
-    const { expand, groupNext, itemNext, group, nextStatus,
-            groupRevert, itemRevert } = btn.dataset;
-
-    // 展開／收合只影響畫面
-    if (expand !== undefined) {
-      const id = Number(expand);
-      expanded.has(id) ? expanded.delete(id) : expanded.add(id);
-      await refresh();
-      return;
-    }
+    const { groupNext, nextStatus, groupRevert } = btn.dataset;
 
     try {
       if (groupRevert !== undefined) {
         // 誤觸要能快速修正，所以不做二次確認
         await apiSend("PATCH", `/orders/${groupRevert}/revert`);
-      } else if (itemRevert !== undefined) {
-        await apiSend("PATCH", `/orders/${group}/items/${itemRevert}/revert`);
       } else if (groupNext !== undefined) {
         await apiSend("PATCH", `/orders/${groupNext}/status`, { status: nextStatus });
         // 吧台自送：完成之後再推一步到已送達。分兩次呼叫是刻意的，
@@ -191,10 +148,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (btn.dataset.alsoDeliver !== undefined) {
           await apiSend("PATCH", `/orders/${groupNext}/status`, { status: "delivered" });
         }
-      } else if (itemNext !== undefined) {
-        await apiSend("PATCH", `/orders/${group}/items/${itemNext}/status`, {
-          status: nextStatus,
-        });
       } else {
         return;
       }

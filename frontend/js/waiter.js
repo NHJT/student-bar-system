@@ -45,11 +45,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let cart = []; // 待送出的杯：{drink_id, drink_name, quantity, special_request}，一列一張單
   let editingId = null; // 正在編輯中的訂單 id
   let pendingRefresh = false; // 編輯期間收到的更新，等編輯結束再套用
-  const expandedDeliver = new Set(); // 待送達卡片展開狀態，重繪後要保持
   const expandedSettled = new Set(); // 已結清訂單被點開的，重繪後要保持
-  // 已完成／已送達區塊自己一份：同一張完成的單在待送達也看得到，
-  // 兩邊共用的話展開一邊會連另一邊一起展開
-  const expandedDone = new Set();
   let doneOpen = false; // 整個區塊預設收合
   const alerted = new Set(); // 已經跳過超時提醒的訂單，key = 訂單id:狀態
 
@@ -231,28 +227,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // ---------------- 待送達佇列 ----------------
   // 卡片與操作方式沿用原本吧台頁的待送達欄位：整張切換，或展開逐項切換。
   // 狀態切換打的是同一組既有 API，後端邏輯（含寫入 delivered_at）完全沒變。
-  function deliverItemRow(order, item) {
-    const canDeliver = item.status === "completed";
-    return `
-      <div class="bar-item ${canDeliver ? "" : "item-done"}">
-        <span class="bar-item-name">${escapeHtml(item.drink_name)} × ${item.quantity}</span>
-        ${statusBadge(item.status)}
-        ${item.special_request
-          ? `<span class="order-note">備註：${escapeHtml(item.special_request)}</span>`
-          : ""}
-        ${canDeliver
-          ? `<button class="btn btn-revert" data-item-revert="${item.id}"
-                data-group="${order.id}" title="退回上一個狀態">${REVERT_LABEL}</button>
-             <button class="btn btn-small btn-ghost"
-                data-item-next="${item.id}" data-group="${order.id}"
-                data-next-status="${DELIVER_NEXT}">${DELIVER_LABEL}</button>`
-          : ""}
-      </div>`;
-  }
-
   function deliverCard(order) {
     const ref = order.completed_at ?? order.placed_at;
-    const open = expandedDeliver.has(order.id);
     const mixed = new Set(order.items.map((i) => i.status)).size > 1;
     // 吧台搆得到的位置提示一下，免得吧台已經遞出去了服務生又跑一趟。
     // 只是標示，按鈕照樣留著——站位這種兩邊都可能送的，誰按都算數。
@@ -275,7 +251,7 @@ document.addEventListener("DOMContentLoaded", () => {
             : ""}
           <span class="order-time">${formatTime(order.placed_at)}</span>
         </div>
-        <div class="card-items" ${open ? "hidden" : ""}>
+        <div class="card-items">
           ${order.items
             .map(
               (i) => `<div class="card-item-brief">${escapeHtml(i.drink_name)} × ${i.quantity}${
@@ -284,17 +260,11 @@ document.addEventListener("DOMContentLoaded", () => {
             )
             .join("")}
         </div>
-        <div class="bar-items" ${open ? "" : "hidden"}>
-          ${order.items.map((i) => deliverItemRow(order, i)).join("")}
-        </div>
         <div class="card-action">
           <span class="elapsed"></span>
           <span class="total-wait"></span>
           <button class="btn btn-revert" data-group-revert="${order.id}"
                   title="退回上一個狀態">${REVERT_LABEL}</button>
-          <button class="btn btn-small btn-ghost" data-expand="${order.id}">
-            ${open ? "收合品項 ▴" : "分項處理 ▾"}
-          </button>
           <button class="btn btn-small btn-primary" data-group-next="${order.id}"
                   data-next-status="${DELIVER_NEXT}">${DELIVER_LABEL}</button>
         </div>
@@ -329,24 +299,7 @@ document.addEventListener("DOMContentLoaded", () => {
       .join("")}</div>`;
   }
 
-  function doneItemRow(order, item) {
-    return `
-      <div class="bar-item item-done">
-        <span class="bar-item-name">${escapeHtml(item.drink_name)} × ${item.quantity}</span>
-        ${statusBadge(item.status)}
-        ${item.special_request
-          ? `<span class="order-note">備註：${escapeHtml(item.special_request)}</span>`
-          : ""}
-        ${DONE_REVERT_LABEL[item.status]
-          ? `<button class="btn btn-revert" data-item-revert="${item.id}"
-                data-group="${order.id}"
-                title="退回上一個狀態">${DONE_REVERT_LABEL[item.status]}</button>`
-          : ""}
-      </div>`;
-  }
-
   function doneCard(order) {
-    const open = expandedDone.has(order.id);
     const mixed = new Set(order.items.map((i) => i.status)).size > 1;
     // 用 waitAttrs：已送達的總等待時間凍結在送達當下，
     // 和下面付款清單同一張單顯示的數字才會一致
@@ -362,7 +315,7 @@ document.addEventListener("DOMContentLoaded", () => {
             : ""}
           <span class="order-time">${formatTime(order.placed_at)}</span>
         </div>
-        <div class="card-items" ${open ? "hidden" : ""}>
+        <div class="card-items">
           ${order.items
             .map(
               (i) => `<div class="card-item-brief">${escapeHtml(i.drink_name)} × ${i.quantity}${
@@ -371,18 +324,12 @@ document.addEventListener("DOMContentLoaded", () => {
             )
             .join("")}
         </div>
-        <div class="bar-items" ${open ? "" : "hidden"}>
-          ${order.items.map((i) => doneItemRow(order, i)).join("")}
-        </div>
         <div class="card-action">
           <span class="total-wait"></span>
           ${DONE_REVERT_LABEL[order.status]
             ? `<button class="btn btn-revert" data-group-revert="${order.id}"
                   title="退回上一個狀態">${DONE_REVERT_LABEL[order.status]}</button>`
             : ""}
-          <button class="btn btn-small btn-ghost" data-expand="${order.id}">
-            ${open ? "收合品項 ▴" : "分項處理 ▾"}
-          </button>
         </div>
         ${stageTimes(order)}
       </li>`;
@@ -403,20 +350,12 @@ document.addEventListener("DOMContentLoaded", () => {
   doneList.addEventListener("click", async (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
-    const { expand, group, groupRevert, itemRevert } = btn.dataset;
+    const { groupRevert } = btn.dataset;
 
-    if (expand !== undefined) {
-      const id = Number(expand);
-      expandedDone.has(id) ? expandedDone.delete(id) : expandedDone.add(id);
-      await refreshOrders();
-      return;
-    }
     try {
       if (groupRevert !== undefined) {
         // 誤觸要能快速修正，所以不做二次確認
         await apiSend("PATCH", `/orders/${groupRevert}/revert`);
-      } else if (itemRevert !== undefined) {
-        await apiSend("PATCH", `/orders/${group}/items/${itemRevert}/revert`);
       } else {
         return;
       }
@@ -463,27 +402,14 @@ document.addEventListener("DOMContentLoaded", () => {
   deliverList.addEventListener("click", async (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
-    const { expand, groupNext, itemNext, group, nextStatus,
-            groupRevert, itemRevert } = btn.dataset;
+    const { groupNext, nextStatus, groupRevert } = btn.dataset;
 
-    if (expand !== undefined) {
-      const id = Number(expand);
-      expandedDeliver.has(id) ? expandedDeliver.delete(id) : expandedDeliver.add(id);
-      await refreshOrders();
-      return;
-    }
     try {
       if (groupRevert !== undefined) {
         // 誤觸要能快速修正，所以不做二次確認
         await apiSend("PATCH", `/orders/${groupRevert}/revert`);
-      } else if (itemRevert !== undefined) {
-        await apiSend("PATCH", `/orders/${group}/items/${itemRevert}/revert`);
       } else if (groupNext !== undefined) {
         await apiSend("PATCH", `/orders/${groupNext}/status`, { status: nextStatus });
-      } else if (itemNext !== undefined) {
-        await apiSend("PATCH", `/orders/${group}/items/${itemNext}/status`, {
-          status: nextStatus,
-        });
       } else {
         return;
       }
