@@ -8,6 +8,9 @@ venv/
 .env
 .env.local
 
+# backup_db.py 的資料庫備份：含完整營運資料，絕對不要進版控
+backups/
+
 # 舊版 SQLite 遺留檔案
 *.db
 *.sqlite3
