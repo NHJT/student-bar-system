@@ -11,7 +11,13 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from backend import inventory
-from backend.database import get_db, row_to_dict, rows_to_dicts, table_exists
+from backend.database import (
+    APP_TIMEZONE,
+    get_db,
+    row_to_dict,
+    rows_to_dicts,
+    table_exists,
+)
 from backend.models import (
     OrderCreate,
     OrderEdit,
@@ -59,7 +65,36 @@ STATUS_TIMESTAMP = {
     "delivered": "delivered_at",
 }
 
-_SELECT_GROUP = "SELECT * FROM order_groups"
+# 營業日的切換時間：凌晨 5 點。營業是 19:00–22:00，結算 23:59 跑完之後
+# 到清晨這段收尾時間（洗杯、補單）仍然算同一個營業夜，5 點之後才換日。
+#
+# 注意：這只是畫面上「哪些單還算今天的」用的切點，每日結算仍然用自然日
+# （summary.py 的 placed_at::date），兩者在 00:00–05:00 會不一致，但那段
+# 時間不營業，實務上不會有訂單落在那裡。改結算的定義會動到歷史資料口徑，
+# 所以刻意不動。
+BUSINESS_DAY_START_HOUR = 5
+
+# 營業日由後端算：前端不碰瀏覽器時間，裝置時鐘跑掉也不會看到錯的清單。
+#
+# 時區寫在 SQL 裡（AT TIME ZONE），不依賴連線的 session timezone。
+# database.py 是在連線建立時下 SET TIME ZONE，但那是交易型指令，連線還回
+# 連線池時的 rollback 會把它還原成伺服器預設（UTC），所以只有每條連線的
+# 第一次取用是對的。這裡自己帶時區，什麼時候被呼叫結果都一樣。
+# APP_TIMEZONE 在 database.py 匯入時就驗證過是合法時區名稱。
+_LOCAL = f"AT TIME ZONE '{APP_TIMEZONE}'"
+_BUSINESS_DATE = (
+    f"((placed_at {_LOCAL}) - interval '{BUSINESS_DAY_START_HOUR} hours')::date"
+)
+_TODAY_BUSINESS_DATE = (
+    f"((NOW() {_LOCAL}) - interval '{BUSINESS_DAY_START_HOUR} hours')::date"
+)
+
+_SELECT_GROUP = (
+    "SELECT *, "
+    f"{_BUSINESS_DATE} AS business_date, "
+    f"({_BUSINESS_DATE} = {_TODAY_BUSINESS_DATE}) AS is_current_business_day "
+    "FROM order_groups"
+)
 
 
 def _items_of(db: Connection, group_ids: list[int]) -> dict[int, list[dict]]:
@@ -140,6 +175,7 @@ def list_orders(
     table_number: Optional[str] = None,  # 文字桌號：「3」「吧台」「站位」
     payment_status: Optional[str] = None,  # 'paid' / 'unpaid'
     today: bool = False,
+    business_day: bool = False,
     db: Connection = Depends(get_db),
 ):
     """訂單列表，可用 ?status=new&table_number=3&payment_status=paid&today=true 過濾。
@@ -166,6 +202,14 @@ def list_orders(
         params["payment_status"] = payment_status
     if today:
         conditions.append("placed_at::date = NOW()::date")
+    if business_day:
+        # 本營業日的單，外加任何還沒結清的（未送達或未付款）——
+        # 前一晚沒處理完的單不能因為換日就從畫面上消失，不然永遠掛著。
+        conditions.append(
+            f"({_BUSINESS_DATE} = {_TODAY_BUSINESS_DATE}"
+            " OR status NOT IN ('delivered', 'cancelled')"
+            " OR payment_status = 'unpaid')"
+        )
     sql = _SELECT_GROUP
     if conditions:
         sql += " WHERE " + " AND ".join(conditions)

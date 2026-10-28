@@ -16,6 +16,10 @@ const REVERT_LABEL = "↩ 退回製作中";
 // 一杯一張單，按一下就是 N 次下單，誤按的代價比以前高
 const CART_WARN_SIZE = 10;
 
+// 本場訂單／付款預設只排這麼多張，其餘點「顯示全部」才展開。
+// 一杯一單之後單量變多，整晚幾百張全部渲染會讓手機捲不完
+const PAYLIST_PAGE = 20;
+
 // 已完成／已送達區塊的退回按鈕文字。退回已送達只限當日訂單，後端會擋
 const DONE_REVERT_LABEL = {
   completed: "↩ 退回製作中",
@@ -44,6 +48,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let availableDrinks = []; // 供修改表單重建下拉選單
   let cart = []; // 待送出的杯：{drink_id, drink_name, quantity, special_request}，一列一張單
   let editingId = null; // 正在編輯中的訂單 id
+  let payListExpanded = false; // 付款清單是否已展開全部
   let pendingRefresh = false; // 編輯期間收到的更新，等編輯結束再套用
   const expandedSettled = new Set(); // 已結清訂單被點開的，重繪後要保持
   let doneOpen = false; // 整個區塊預設收合
@@ -353,8 +358,14 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderDone(orders) {
+    // 只列本營業日做完的；前一晚殘留的未結單留在下面的付款清單處理，
+    // 不要混進這一區，不然「今天做了幾杯」會看不準
     const done = orders
-      .filter((o) => o.status === "completed" || o.status === "delivered")
+      .filter(
+        (o) =>
+          o.is_current_business_day &&
+          (o.status === "completed" || o.status === "delivered")
+      )
       .reverse(); // 新的在前
     doneCount.textContent = done.length;
     doneCount.hidden = done.length === 0;
@@ -504,12 +515,22 @@ document.addEventListener("DOMContentLoaded", () => {
     // 品項進入製作後就不能改了；桌號到送達前都還能改（客人換位子）
     const editable = o.status === "new";
     const canEditTable = o.status !== "delivered";
+    // 前一營業日殘留的未結單：標出來，並給一個直接結掉的按鈕，
+    // 不然它會一直掛在清單上，誰也不知道該不該動它
+    const stale = !o.is_current_business_day;
+    const classes = [
+      o.payment_status === "unpaid" ? "order-unpaid" : "",
+      stale ? "order-stale" : "",
+    ].filter(Boolean).join(" ");
     return `
-      <li data-order="${o.id}" class="${o.payment_status === "unpaid" ? "order-unpaid" : ""}"
-          ${waitAttrs(o)}>
+      <li data-order="${o.id}" class="${classes}" ${waitAttrs(o)}>
         <div class="order-row">
           <strong>${escapeHtml(tableLabel(o.table_number))}</strong>
           <span class="order-summary">${o.item_count} 品項 / ${o.total_quantity} 杯</span>
+          ${stale
+            ? `<span class="badge badge-stale"
+                     title="${escapeHtml(o.business_date)} 的單，還沒結清">前一營業日</span>`
+            : ""}
           ${statusBadge(o.status)}
           <span class="badge ${o.payment_status === "paid" ? "badge-paid" : "badge-unpaid"}">
             ${o.payment_status === "paid" ? "已付款" : "未付款"}
@@ -526,7 +547,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 editable ? "修改" : "改桌號"
               }</button>`
             : ""}
-          ${editable
+          ${stale && o.status !== "delivered"
+            ? `<button class="btn btn-small btn-primary" data-finish="${o.id}"
+                       data-from="${o.status}">補標為已送達</button>`
+            : ""}
+          ${editable || stale
             ? `<button class="btn btn-small btn-danger" data-cancel="${o.id}">取消訂單</button>`
             : ""}
         </div>
@@ -620,11 +645,13 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function refreshOrders() {
-    const orders = await apiGet("/orders");
+    // business_day=true：本營業日的單，外加任何還沒結清的。
+    // 營業日的切點（凌晨 5 點）由後端算，前端不碰瀏覽器時間——
+    // 裝置時鐘跑掉也不會看到錯的清單。
+    const orders = await apiGet("/orders?business_day=true");
     // 待送達永遠要更新：服務生在改單時，吧台可能正好完成了另一張
     renderDeliver(orders);
-    // 已完成／已送達只取當日，否則會把開店至今所有訂單都列出來
-    renderDone(await apiGet("/orders?today=true"));
+    renderDone(orders);
     // 下方清單在編輯中不重繪，避免使用者打到一半的內容被蓋掉
     if (editingId !== null) {
       pendingRefresh = true;
@@ -643,13 +670,27 @@ document.addEventListener("DOMContentLoaded", () => {
       : "全部已收款 ✓";
     unpaidCount.classList.toggle("pay-count-warn", unpaidOrders.length > 0);
 
-    // 未付款的排最上面（要補處理），其餘新的在前
-    const rows = [
-      ...unpaidOrders.sort((a, b) => b.id - a.id).map(orderRow),
-      ...paidOrders.map(orderRow),
+    // 前一營業日殘留的未結單排最前面，接著未付款，其餘新的在前
+    const stale = active.filter((o) => !o.is_current_business_day);
+    const fresh = active.filter((o) => o.is_current_business_day);
+    const ordered = [
+      ...stale.sort((a, b) => b.id - a.id),
+      ...fresh.filter((o) => o.payment_status === "unpaid").sort((a, b) => b.id - a.id),
+      ...fresh.filter((o) => o.payment_status !== "unpaid").sort((a, b) => b.id - a.id),
     ];
-    orderList.innerHTML = rows.length
-      ? rows.join("")
+
+    // 一杯一單之後單量變多，只先排前 PAYLIST_PAGE 張，其餘點開才顯示
+    const shown = payListExpanded ? ordered : ordered.slice(0, PAYLIST_PAGE);
+    const hidden = ordered.length - shown.length;
+    orderList.innerHTML = ordered.length
+      ? shown.map(orderRow).join("") +
+        (hidden > 0 || payListExpanded
+          ? `<li class="paylist-more">
+               <button class="btn btn-small btn-ghost" data-paylist-toggle>
+                 ${payListExpanded ? "收合清單 ▴" : `顯示全部（還有 ${hidden} 張）▾`}
+               </button>
+             </li>`
+          : "")
       : '<li class="placeholder">尚無訂單</li>';
     updateTotalWait();
   }
@@ -682,7 +723,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const btn = e.target.closest("button");
     if (!btn) return;
     const { pay, edit, cancel, save, discard, addItem, removeItem,
-            toggleSettled } = btn.dataset;
+            toggleSettled, paylistToggle, finish, from } = btn.dataset;
+
+    // 清單展開／收合只影響畫面
+    if (paylistToggle !== undefined) {
+      payListExpanded = !payListExpanded;
+      await refreshOrders();
+      return;
+    }
 
     // 已結清訂單的展開／收合只影響畫面
     if (toggleSettled !== undefined) {
@@ -722,6 +770,15 @@ document.addEventListener("DOMContentLoaded", () => {
       } else if (cancel) {
         if (!confirm(`確定要取消訂單 #${cancel}？食材會退回庫存。`)) return;
         await apiSend("PATCH", `/orders/${cancel}/status`, { status: "cancelled" });
+        await refreshOrders();
+      } else if (finish !== undefined) {
+        // 殘留的單補標成已送達。狀態一步一步推，後端的流轉規則不放寬，
+        // 每一階段的時間戳也照常蓋上，統計不會出現缺口。
+        if (!confirm(`把訂單 #${finish} 補標為已送達？`)) return;
+        const path = STAGE_ORDER.slice(STAGE_ORDER.indexOf(from) + 1);
+        for (const next of path) {
+          await apiSend("PATCH", `/orders/${finish}/status`, { status: next });
+        }
         await refreshOrders();
       } else if (save) {
         const payload = {

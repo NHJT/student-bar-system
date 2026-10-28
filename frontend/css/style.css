@@ -333,6 +333,10 @@ form input, form select,
 /* 本場訂單／付款：版面讓給還要處理的訂單，所以整欄收緊 */
 .pay-count { color: var(--muted); font-weight: 400; font-size: .8rem; }
 .pay-count.pay-count-warn { color: var(--danger); font-weight: 600; }
+/* 前一營業日殘留、還沒結清的單 */
+.badge-stale { background: #fff1dd; color: #8a4a00; }
+.order-list.compact li.order-stale { border-left: 4px solid var(--warning); }
+.paylist-more { padding: .6rem 0; text-align: center; }
 .order-list.compact li { padding: .5rem .6rem; margin-bottom: .35rem; }
 .order-list.compact .order-item-line { font-size: .82rem; margin-top: .25rem; }
 /* 未付款是這一欄的重點，左邊給一道標示條 */
