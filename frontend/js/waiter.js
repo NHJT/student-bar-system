@@ -251,8 +251,8 @@ document.addEventListener("DOMContentLoaded", () => {
   function deliverCard(order) {
     const ref = order.completed_at ?? order.placed_at;
     const mixed = new Set(order.items.map((i) => i.status)).size > 1;
-    // 吧台搆得到的位置提示一下，免得吧台已經遞出去了服務生又跑一趟。
-    // 只是標示，按鈕照樣留著——站位這種兩邊都可能送的，誰按都算數。
+    // 坐吧台的單提示一下，免得吧台已經遞出去了服務生又跑一趟。
+    // 只是標示，按鈕照樣留著：吧台漏按時服務生仍然要能把它結掉。
     const barHint = barDeliveryHint(order.table_number);
     return `
       <li data-id="${order.id}" data-status="${order.status}" data-ref="${ref}"

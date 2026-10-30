@@ -8,8 +8,9 @@
 const NEXT_STATUS = { new: "preparing", preparing: "completed" };
 const NEXT_LABEL = { new: "開始製作 ▶", preparing: "完成 ✓" };
 
-// 吧台搆得到的位置（吧台／外帶／站位，見 common.js）調完就直接遞給客人，
+// 坐在吧台的客人（見 common.js 的 isBarCounterSeat）調完直接隔著檯面遞過去，
 // 所以「完成」那一步順手把訂單推到已送達，不用再繞一趟服務生的待送達。
+// 站位與外帶不走這條路，按「完成」之後照常進待送達等服務生送。
 // 走的是跟服務生頁完全一樣的狀態流程，delivered_at 照常蓋。
 const DELIVER_LABEL = "完成並送出 ✓";
 
@@ -47,7 +48,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // 各品項狀態不一致時提示，讓吧台知道還有品項落後
     const mixed = new Set(order.items.map((i) => i.status)).size > 1;
     // 只有「完成」那一步會順手送出；開始製作那一步跟平常一樣
-    const selfDeliver = order.status === "preparing" && isBarReachable(order.table_number);
+    const selfDeliver =
+      order.status === "preparing" && isBarCounterSeat(order.table_number);
     return `
       <li data-id="${order.id}" data-status="${order.status}" data-ref="${ref}"
           data-table="${escapeHtml(order.table_number)}"

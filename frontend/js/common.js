@@ -23,22 +23,19 @@ const NON_TABLE_SEATS = ["吧台左邊", "吧台中間", "吧台右邊", "站位
 // 後端的流轉規則一次只准走一步，要把落後的單補到已送達就得逐段推。
 const STAGE_ORDER = ["new", "preparing", "completed", "delivered"];
 
-// 吧台搆得到、調酒師可以直接把飲料遞給客人的位置。
+// 坐在吧台的客人：調酒師隔著檯面直接把酒遞過去，不經過服務生。
 // 用前綴比對而不是等值比對：舊訂單的桌號只存「吧台」，一樣算在內。
-// 站位也列進來——站位的客人吧台和服務生都可能送，兩邊都看得到按鈕，
-// 誰先按「已送達」另一邊就會即時同步（WebSocket），不會重複送。
-function isBarReachable(tableNumber) {
-  const seat = String(tableNumber ?? "");
-  return seat.startsWith("吧台") || seat === "外帶" || seat === "站位";
+//
+// 站位與外帶**不算**：站位的客人不在檯面邊，外帶要走到櫃檯交付，
+// 兩者都由服務生送，吧台按「完成」之後進待送達。
+function isBarCounterSeat(tableNumber) {
+  return String(tableNumber ?? "").startsWith("吧台");
 }
 
-// 服務生頁的提示文字：吧台／外帶本來就由吧台自己送，站位則是兩邊都可以。
+// 服務生頁的提示文字：只有坐吧台的單是吧台自己送，標出來免得重複跑一趟。
 // null 代表這張單就是服務生負責，不用特別標。
 function barDeliveryHint(tableNumber) {
-  const seat = String(tableNumber ?? "");
-  if (seat.startsWith("吧台") || seat === "外帶") return "🍸 吧台自送";
-  if (seat === "站位") return "🍸 吧台也可送";
-  return null;
+  return isBarCounterSeat(tableNumber) ? "🍸 吧台自送" : null;
 }
 
 // 基酒分類的顯示順序（drinks.category）。
