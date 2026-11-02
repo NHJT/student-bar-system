@@ -404,7 +404,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!btn) return;
     const { groupRevert } = btn.dataset;
     if (groupRevert === undefined) return;
-    if (!guard.allow()) return; // 剛重繪過或按下去之後重排過，不算數
+    if (!guard.allow(btn)) return; // 卡片剛位移過，這一次不算數
 
     const label = cardLabel(btn);
     try {
@@ -459,7 +459,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!btn) return;
     const { groupNext, nextStatus, groupRevert } = btn.dataset;
     if (groupNext === undefined && groupRevert === undefined) return;
-    if (!guard.allow()) return; // 剛重繪過或按下去之後重排過，不算數
+    if (!guard.allow(btn)) return; // 卡片剛位移過，這一次不算數
 
     const label = cardLabel(btn);
     try {
@@ -817,7 +817,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // 這幾個都會改到訂單，要過防誤動那一關。
     // discard（放棄編輯）不打 API、也不動別張單，所以不擋。
-    if ((pay || edit || cancel || save || finish !== undefined) && !guard.allow()) {
+    if ((pay || edit || cancel || save || finish !== undefined) && !guard.allow(btn)) {
       return;
     }
 

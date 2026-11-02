@@ -243,6 +243,13 @@ form input, form select,
   border-left-color: var(--success, #2e7d32);
   font-size: .8rem; padding: .45rem .6rem;
 }
+/* 點擊被防誤動擋下來時閃一下，讓人知道「有按到，只是這次不算」 */
+.btn-blocked { animation: btn-blocked-flash .45s ease; }
+@keyframes btn-blocked-flash {
+  0%, 100% { box-shadow: none; }
+  30%      { box-shadow: 0 0 0 3px rgba(217, 65, 65, .5); }
+  65%      { box-shadow: 0 0 0 3px rgba(217, 65, 65, .2); }
+}
 /* 剛離開這一區的卡片：留 2 秒、標灰、完全不吃點擊，
    後面的卡片才不會瞬間往上補位，手指按到別張單 */
 .card-leaving {

@@ -207,8 +207,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const { groupNext, nextStatus, groupRevert } = btn.dataset;
     if (groupNext === undefined && groupRevert === undefined) return;
 
-    // 畫面剛跳動過、或按下去之後整排重排過，這一次點擊就不算數
-    if (!guard.allow()) return;
+    // 卡片剛位移過、或按下去之後位置變了，這一次點擊就不算數
+    if (!guard.allow(btn)) return;
 
     // 先把卡片上的桌號與飲料記下來：等一下重繪後這張卡片可能已經不在了，
     // 成功提示要靠它告訴吧台「剛剛動到的是哪一張」

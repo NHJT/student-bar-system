@@ -183,12 +183,12 @@ function setupAudioUnlock(hintId = "sound-hint") {
 //   3. pointerdown 記下當時的重繪版本，放開時版本不同就不算數
 //   4. 剛離開這一區的卡片留 2 秒並標灰，後面的卡片不會瞬間往上補位
 // ---------------------------------------------------------------------------
-const GUARD_SETTLE_MS = 500; // 重繪後多久內忽略點擊
+const GUARD_SETTLE_MS = 300; // 卡片位移後多久內忽略點擊
 const CARD_LEAVING_MS = 2000; // 離開的卡片先留多久
 
 function createClickGuard(root = document) {
-  let version = 0; // 每重繪一次加一
-  let renderedAt = 0;
+  let version = 0; // 只有「卡片真的位移」時才加一
+  let shiftedAt = 0;
   let busy = false;
   let pressVersion = null;
 
@@ -201,20 +201,44 @@ function createClickGuard(root = document) {
     true
   );
 
+  // 被擋下來時要讓人看得出來。無聲吃掉的話，按的人會以為按鈕壞了，
+  // 再按一次反而更亂。
+  function flash(btn) {
+    if (!btn) return;
+    btn.classList.remove("btn-blocked");
+    void btn.offsetWidth; // 強制重算，同一顆按鈕連續被擋才會重播動畫
+    btn.classList.add("btn-blocked");
+    setTimeout(() => btn.classList.remove("btn-blocked"), 500);
+  }
+
   return {
-    /** 每次整批重繪後呼叫。 */
-    bumpVersion() {
+    /** 卡片位置有變動時才呼叫：只有這種時候手指才可能按錯張。 */
+    markShifted() {
       version += 1;
-      renderedAt = Date.now();
+      shiftedAt = Date.now();
     },
-    /** 這一次點擊可不可以執行。回傳 false 就整個忽略，不要有任何副作用。 */
-    allow() {
+    /**
+     * 這一次點擊可不可以執行。擋下來時會閃一下按鈕並說明原因，
+     * 不會無聲吃掉。btn 傳進來只是為了給回饋。
+     */
+    allow(btn) {
       const pressed = pressVersion;
       pressVersion = null;
-      if (busy) return false;
-      if (Date.now() - renderedAt < GUARD_SETTLE_MS) return false;
+      if (busy) {
+        flash(btn); // 上一個動作還沒回來，不另外跳字，避免連點時洗版
+        return false;
+      }
+      if (Date.now() - shiftedAt < GUARD_SETTLE_MS) {
+        flash(btn);
+        showActionToast("清單剛更新，請再按一次");
+        return false;
+      }
       // 鍵盤觸發的 click 沒有 pointerdown，pressed 會是 null，那就不擋
-      if (pressed !== null && pressed !== version) return false;
+      if (pressed !== null && pressed !== version) {
+        flash(btn);
+        showActionToast("清單剛更新，請再按一次");
+        return false;
+      }
       return true;
     },
     /** 包住會打 API 的動作，期間擋掉其他點擊。 */
@@ -232,11 +256,25 @@ function createClickGuard(root = document) {
 /**
  * 整批重繪一個清單，並讓「這次消失的卡片」先留 2 秒、標灰、不吃點擊。
  * 回傳 render(html, ids)，ids 是這次還在的卡片 id 字串集合。
+ *
+ * 三種情況分開處理，因為「重繪」和「卡片位移」不是同一件事：
+ *   1. html 一模一樣       → 什麼都不做。尖峰時每幾秒一次推播，多數都是這種，
+ *                            不碰 DOM 就不會打斷正在按的人（計時紅字是另外更新的）
+ *   2. 內容變了但順序沒變   → 重繪，但不冷卻。手指底下還是同一張單的按鈕
+ *   3. 卡片增減或順序改變   → 重繪並冷卻。只有這時候才可能按錯張
  */
 function createListRenderer(listEl, guard, idAttr = "data-id") {
   const leaving = new Map(); // id -> {html, expires}
+  let lastHtml = null;
+  let lastOrder = ""; // 上一次的 id 順序
 
   return function render(html, ids) {
+    if (html === lastHtml && !leaving.size) return; // 情況 1
+    const order = [...ids].join(",");
+    const shifted = order !== lastOrder;
+    lastHtml = html;
+    lastOrder = order;
+
     // 先記下這一輪不見的卡片，用的是它重繪前的樣子
     for (const el of listEl.querySelectorAll(`[${idAttr}]`)) {
       if (el.classList.contains("card-leaving")) continue;
@@ -266,7 +304,7 @@ function createListRenderer(listEl, guard, idAttr = "data-id") {
       }, item.expires - now);
     }
 
-    guard.bumpVersion();
+    if (shifted) guard.markShifted(); // 情況 3 才冷卻
   };
 }
 
