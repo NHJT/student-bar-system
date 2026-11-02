@@ -170,28 +170,82 @@ function setupAudioUnlock(hintId = "sound-hint") {
   document.addEventListener("keydown", unlock, { once: true });
 }
 
-// Andon 跳出視窗。回傳 showModal(items)，items 為 {table, summary, reason}
-function setupAndonModal(modalId = "andon-modal") {
-  const modal = document.getElementById(modalId);
-  if (!modal) return () => {};
-  const body = modal.querySelector(".alert-list");
-  modal.querySelector("[data-modal-close]")?.addEventListener("click", () => {
-    modal.hidden = true;
-  });
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) modal.hidden = true; // 點背景關閉
-  });
+// Andon 超時提示：右下角的小卡片，不是全螢幕視窗。
+// 以前用 modal，整頁會變黑、調酒師手上在調酒還得先去點掉它才能操作。
+// 現在只佔右下角一小塊，容器本身 pointer-events:none，點擊會穿透過去，
+// 只有卡片自己收得到點擊，不會擋住底下的訂單卡片或按鈕。
+// 提示裡的階段名稱。和 STATUS_LABELS 分開：那是訂單徽章上的字（「新訂單」），
+// 這裡講的是「誰該動了」，用和門檻設定一致的講法（待接單 20 分、待送達 10 分）。
+const ANDON_STAGE_LABELS = {
+  new: "待接單",
+  preparing: "製作中",
+  completed: "待送達",
+};
+
+const ANDON_TOAST_MAX = 4; // 同時最多顯示幾張，其餘排隊
+const ANDON_TOAST_TTL = 15000; // 每張顯示多久（毫秒）後自動消失
+
+// 回傳 showAndon(items)，items 為 {table, summary, stage, minutes}
+function setupAndonToasts(containerId = "andon-toasts") {
+  let box = document.getElementById(containerId);
+  if (!box) {
+    box = document.createElement("div");
+    box.id = containerId;
+    box.className = "toast-stack";
+    // polite 而不是 assertive：讀螢幕的人不會被打斷，但還是會唸到
+    box.setAttribute("role", "status");
+    box.setAttribute("aria-live", "polite");
+    document.body.appendChild(box);
+  }
+
+  const pending = []; // 超過上限時排隊，前面的消失後再補上
+  let moreEl = null;
+
+  function renderMore() {
+    if (!pending.length) {
+      moreEl?.remove();
+      moreEl = null;
+      return;
+    }
+    if (!moreEl) {
+      moreEl = document.createElement("div");
+      moreEl.className = "toast toast-more";
+      box.appendChild(moreEl);
+    }
+    moreEl.textContent = `還有 ${pending.length} 則`;
+    box.appendChild(moreEl); // 一直保持在最下面
+  }
+
+  function dismiss(card) {
+    if (!card.isConnected) return; // X 按過了就不要再被計時器關一次
+    card.remove();
+    if (pending.length) show(pending.shift());
+    renderMore();
+  }
+
+  function show(item) {
+    const card = document.createElement("div");
+    card.className = "toast";
+    card.innerHTML = `
+      <button class="toast-close" aria-label="關閉提示">✕</button>
+      <div class="toast-title">⚠️ ${escapeHtml(tableLabel(item.table))}</div>
+      <div class="toast-drink">${escapeHtml(item.summary)}</div>
+      <div class="toast-meta">${escapeHtml(item.stage)}・已等 ${Math.floor(item.minutes)} 分</div>`;
+    card.querySelector(".toast-close").addEventListener("click", () => dismiss(card));
+    box.appendChild(card);
+    renderMore(); // 把「還有 N 則」推回最下面
+    setTimeout(() => dismiss(card), ANDON_TOAST_TTL);
+  }
+
   return (items) => {
-    body.innerHTML = items
-      .map(
-        (it) => `
-        <li class="overdue-item">
-          <strong>${escapeHtml(tableLabel(it.table))} ・ ${escapeHtml(it.summary)}</strong>
-          <div class="modal-reason">${escapeHtml(it.reason)}</div>
-        </li>`
-      )
-      .join("");
-    modal.hidden = false;
+    for (const item of items) {
+      if (box.querySelectorAll(".toast:not(.toast-more)").length >= ANDON_TOAST_MAX) {
+        pending.push(item);
+        renderMore();
+      } else {
+        show(item);
+      }
+    }
   };
 }
 

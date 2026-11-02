@@ -8,7 +8,6 @@
 // 待送達的下一步只有「已送達」一種
 const DELIVER_NEXT = "delivered";
 const DELIVER_LABEL = "已送出 🚚";
-const DELIVER_REASON = (m) => `完成後 ${m} 分鐘未送達`;
 // 待送達在角色分工時搬到這一頁，所以「退回製作中」也放在這裡
 const REVERT_LABEL = "↩ 退回製作中";
 
@@ -55,7 +54,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const alerted = new Set(); // 已經跳過超時提醒的訂單，key = 訂單id:狀態
 
   setupAudioUnlock();
-  const showModal = setupAndonModal();
+  const showAndon = setupAndonToasts();
 
   doneToggle.addEventListener("click", () => {
     doneOpen = !doneOpen;
@@ -411,12 +410,13 @@ document.addEventListener("DOMContentLoaded", () => {
         fresh.push({
           table: li.dataset.table,
           summary: li.dataset.summary,
-          reason: DELIVER_REASON(limit),
+          stage: ANDON_STAGE_LABELS[li.dataset.status],
+          minutes,
         });
       }
     });
     if (fresh.length) {
-      showModal(fresh);
+      showAndon(fresh);
       playAlarm();
     }
   }

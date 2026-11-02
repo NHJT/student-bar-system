@@ -22,11 +22,6 @@ const REVERT_LABEL = {
   completed: "↩ 退回製作中",
 };
 
-const ANDON_REASON = {
-  new: (m) => `下單後超過 ${m} 分鐘仍未開始製作`,
-  preparing: (m) => `製作中已超過 ${m} 分鐘`,
-};
-
 document.addEventListener("DOMContentLoaded", () => {
   const queues = {
     new: document.getElementById("queue-new"),
@@ -38,7 +33,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let recipeOpen = false; // 酒譜預設收合
 
   setupAudioUnlock();
-  const showModal = setupAndonModal();
+  const showAndon = setupAndonToasts();
 
   // 已經跳過提醒的訂單，key = 訂單id:狀態（換一站會再提醒一次）
   const alerted = new Set();
@@ -109,13 +104,14 @@ document.addEventListener("DOMContentLoaded", () => {
         fresh.push({
           table: li.dataset.table,
           summary: li.dataset.summary,
-          reason: ANDON_REASON[status](limit),
+          stage: ANDON_STAGE_LABELS[status],
+          minutes,
         });
       }
     });
 
     if (fresh.length) {
-      showModal(fresh);
+      showAndon(fresh);
       playAlarm();
     }
   }
