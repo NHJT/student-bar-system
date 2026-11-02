@@ -55,6 +55,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
   setupAudioUnlock();
   const showAndon = setupAndonToasts();
+  // 防誤動：重繪會讓卡片往上跳，手指按下去和放開時可能不是同一張單
+  const guard = createClickGuard();
+
+  // 按鈕所在那張卡片的「桌號 飲料」。重繪後卡片可能已經換區了，
+  // 成功提示要靠這段文字講清楚剛剛動到的是哪一張單
+  function cardLabel(btn) {
+    const li = btn.closest("li[data-id], li[data-order]");
+    if (!li) return "";
+    const table = li.dataset.table ?? li.querySelector("strong")?.textContent ?? "";
+    const summary = li.dataset.summary ?? "";
+    return `${li.dataset.table ? tableLabel(table) : table.trim()} ${summary}`.trim();
+  }
+  const renderDeliverList = createListRenderer(deliverList, guard);
+  const renderDoneList = createListRenderer(doneList, guard);
+  const renderOrderList = createListRenderer(orderList, guard, "data-order");
 
   doneToggle.addEventListener("click", () => {
     doneOpen = !doneOpen;
@@ -295,9 +310,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const pending = orders.filter((o) => o.status === "completed");
     deliverCount.textContent = pending.length;
     deliverCount.hidden = pending.length === 0;
-    deliverList.innerHTML = pending.length
-      ? pending.map(deliverCard).join("") // API 已依 placed_at 排序，先完成的先送
-      : '<li class="placeholder">目前沒有待送達的訂單</li>';
+    renderDeliverList(
+      pending.length
+        ? pending.map(deliverCard).join("") // API 已依 placed_at 排序，先完成的先送
+        : '<li class="placeholder">目前沒有待送達的訂單</li>',
+      new Set(pending.map((o) => String(o.id)))
+    );
     updateAndon();
     updateTotalWait();
   }
@@ -368,9 +386,12 @@ document.addEventListener("DOMContentLoaded", () => {
       .reverse(); // 新的在前
     doneCount.textContent = done.length;
     doneCount.hidden = done.length === 0;
-    doneList.innerHTML = done.length
-      ? done.map(doneCard).join("")
-      : '<li class="placeholder">本日還沒有完成的訂單</li>';
+    renderDoneList(
+      done.length
+        ? done.map(doneCard).join("")
+        : '<li class="placeholder">本日還沒有完成的訂單</li>',
+      new Set(done.map((o) => String(o.id)))
+    );
     doneList.querySelectorAll("li[data-id]").forEach(renderTotalWait);
   }
 
@@ -378,15 +399,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const btn = e.target.closest("button");
     if (!btn) return;
     const { groupRevert } = btn.dataset;
+    if (groupRevert === undefined) return;
+    if (!guard.allow()) return; // 剛重繪過或按下去之後重排過，不算數
 
+    const label = cardLabel(btn);
     try {
-      if (groupRevert !== undefined) {
+      await guard.lock(async () => {
         // 誤觸要能快速修正，所以不做二次確認
-        await apiSend("PATCH", `/orders/${groupRevert}/revert`);
-      } else {
-        return;
-      }
-      await refreshOrders();
+        const after = await apiSend("PATCH", `/orders/${groupRevert}/revert`);
+        showActionToast(`${label} → ${STATUS_LABELS[after.status]}`);
+        await refreshOrders();
+      });
     } catch (err) {
       alert(`退回失敗：${err.message}`);
       await refreshOrders(); // 可能被別台裝置先更新了，重抓一次
@@ -431,17 +454,22 @@ document.addEventListener("DOMContentLoaded", () => {
     const btn = e.target.closest("button");
     if (!btn) return;
     const { groupNext, nextStatus, groupRevert } = btn.dataset;
+    if (groupNext === undefined && groupRevert === undefined) return;
+    if (!guard.allow()) return; // 剛重繪過或按下去之後重排過，不算數
 
+    const label = cardLabel(btn);
     try {
-      if (groupRevert !== undefined) {
-        // 誤觸要能快速修正，所以不做二次確認
-        await apiSend("PATCH", `/orders/${groupRevert}/revert`);
-      } else if (groupNext !== undefined) {
-        await apiSend("PATCH", `/orders/${groupNext}/status`, { status: nextStatus });
-      } else {
-        return;
-      }
-      await refreshOrders();
+      await guard.lock(async () => {
+        if (groupRevert !== undefined) {
+          // 誤觸要能快速修正，所以不做二次確認
+          const after = await apiSend("PATCH", `/orders/${groupRevert}/revert`);
+          showActionToast(`${label} → ${STATUS_LABELS[after.status]}`);
+        } else {
+          await apiSend("PATCH", `/orders/${groupNext}/status`, { status: nextStatus });
+          showActionToast(`${label} → ${STATUS_LABELS[nextStatus]}`);
+        }
+        await refreshOrders();
+      });
     } catch (err) {
       alert(`狀態更新失敗：${err.message}`);
       await refreshOrders(); // 可能被別台裝置先更新了，重抓一次
@@ -523,7 +551,9 @@ document.addEventListener("DOMContentLoaded", () => {
       stale ? "order-stale" : "",
     ].filter(Boolean).join(" ");
     return `
-      <li data-order="${o.id}" class="${classes}" ${waitAttrs(o)}>
+      <li data-order="${o.id}" class="${classes}" ${waitAttrs(o)}
+          data-table="${escapeHtml(o.table_number)}"
+          data-summary="${escapeHtml(o.summary)}">
         <div class="order-row">
           <strong>${escapeHtml(tableLabel(o.table_number))}</strong>
           <span class="order-summary">${o.item_count} 品項 / ${o.total_quantity} 杯</span>
@@ -682,16 +712,19 @@ document.addEventListener("DOMContentLoaded", () => {
     // 一杯一單之後單量變多，只先排前 PAYLIST_PAGE 張，其餘點開才顯示
     const shown = payListExpanded ? ordered : ordered.slice(0, PAYLIST_PAGE);
     const hidden = ordered.length - shown.length;
-    orderList.innerHTML = ordered.length
-      ? shown.map(orderRow).join("") +
-        (hidden > 0 || payListExpanded
-          ? `<li class="paylist-more">
-               <button class="btn btn-small btn-ghost" data-paylist-toggle>
-                 ${payListExpanded ? "收合清單 ▴" : `顯示全部（還有 ${hidden} 張）▾`}
-               </button>
-             </li>`
-          : "")
-      : '<li class="placeholder">尚無訂單</li>';
+    renderOrderList(
+      ordered.length
+        ? shown.map(orderRow).join("") +
+          (hidden > 0 || payListExpanded
+            ? `<li class="paylist-more">
+                 <button class="btn btn-small btn-ghost" data-paylist-toggle>
+                   ${payListExpanded ? "收合清單 ▴" : `顯示全部（還有 ${hidden} 張）▾`}
+                 </button>
+               </li>`
+            : "")
+        : '<li class="placeholder">尚無訂單</li>',
+      new Set(shown.map((o) => String(o.id)))
+    );
     updateTotalWait();
   }
 
@@ -759,27 +792,43 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    // 這幾個都會改到訂單，要過防誤動那一關。
+    // discard（放棄編輯）不打 API、也不動別張單，所以不擋。
+    if ((pay || edit || cancel || save || finish !== undefined) && !guard.allow()) {
+      return;
+    }
+
+    const label = cardLabel(btn);
     try {
       if (pay) {
-        await apiSend("PATCH", `/orders/${pay}/payment`, { payment_status: "paid" });
-        await refreshOrders();
+        await guard.lock(async () => {
+          await apiSend("PATCH", `/orders/${pay}/payment`, { payment_status: "paid" });
+          showActionToast(`${label} → 已付款`);
+          await refreshOrders();
+        });
       } else if (edit) {
         await openEditor(edit);
       } else if (discard) {
         await closeEditor();
       } else if (cancel) {
-        if (!confirm(`確定要取消訂單 #${cancel}？食材會退回庫存。`)) return;
-        await apiSend("PATCH", `/orders/${cancel}/status`, { status: "cancelled" });
-        await refreshOrders();
+        if (!confirm(`確定要取消訂單 #${cancel}（${label}）？食材會退回庫存。`)) return;
+        await guard.lock(async () => {
+          await apiSend("PATCH", `/orders/${cancel}/status`, { status: "cancelled" });
+          showActionToast(`${label} → 已取消`);
+          await refreshOrders();
+        });
       } else if (finish !== undefined) {
         // 殘留的單補標成已送達。狀態一步一步推，後端的流轉規則不放寬，
         // 每一階段的時間戳也照常蓋上，統計不會出現缺口。
-        if (!confirm(`把訂單 #${finish} 補標為已送達？`)) return;
-        const path = STAGE_ORDER.slice(STAGE_ORDER.indexOf(from) + 1);
-        for (const next of path) {
-          await apiSend("PATCH", `/orders/${finish}/status`, { status: next });
-        }
-        await refreshOrders();
+        if (!confirm(`把訂單 #${finish}（${label}）補標為已送達？`)) return;
+        await guard.lock(async () => {
+          const path = STAGE_ORDER.slice(STAGE_ORDER.indexOf(from) + 1);
+          for (const next of path) {
+            await apiSend("PATCH", `/orders/${finish}/status`, { status: next });
+          }
+          showActionToast(`${label} → 已送達`);
+          await refreshOrders();
+        });
       } else if (save) {
         const payload = {
           table_number: document.getElementById("edit-table").value,
@@ -798,7 +847,10 @@ document.addEventListener("DOMContentLoaded", () => {
           }
           payload.items = items;
         }
-        await apiSend("PATCH", `/orders/${save}`, payload);
+        await guard.lock(async () => {
+          await apiSend("PATCH", `/orders/${save}`, payload);
+          showActionToast(`${label} → 已更新`);
+        });
         await closeEditor();
       }
     } catch (err) {

@@ -238,6 +238,18 @@ form input, form select,
   color: var(--muted); font-size: .7rem; line-height: 1; padding: 0;
 }
 .toast-close:hover { color: var(--text); }
+/* 操作成功的回報：綠色、比警報低調，4 秒就消失 */
+.toast-action {
+  border-left-color: var(--success, #2e7d32);
+  font-size: .8rem; padding: .45rem .6rem;
+}
+/* 剛離開這一區的卡片：留 2 秒、標灰、完全不吃點擊，
+   後面的卡片才不會瞬間往上補位，手指按到別張單 */
+.card-leaving {
+  opacity: .4; filter: grayscale(1);
+  pointer-events: none;
+  transition: opacity .3s ease;
+}
 /* 超過同時顯示上限時排隊，只用一行告知還有幾則 */
 .toast-more {
   padding: .3rem .6rem; text-align: center;
