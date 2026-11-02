@@ -206,45 +206,50 @@ form input, form select,
 
 /* ---------- Andon 超時提示（右下角小卡片） ----------
    以前是全螢幕 modal，整頁變黑還要手動點掉，調酒中很礙事。
-   現在只佔右下角：容器 pointer-events:none，點擊穿透過去不會擋到
-   底下的訂單卡片與按鈕，只有卡片本身收得到點擊（為了那顆 X）。 */
+
+   這一區完全不吃點擊：容器和卡片都是 pointer-events:none，
+   只有那顆 X 是 auto。所以就算提示蓋在「完成」按鈕上面，
+   手指點下去仍然是按到底下的按鈕，不會被提示吃掉。 */
 .toast-stack {
   position: fixed; z-index: 50;
   right: 1rem; bottom: 1rem;
-  display: flex; flex-direction: column; gap: .5rem;
-  width: min(20rem, calc(100vw - 2rem));
+  display: flex; flex-direction: column; gap: .4rem;
+  width: 240px; max-width: calc(100vw - 2rem);
   pointer-events: none;
 }
 .toast {
-  pointer-events: auto;
+  pointer-events: none;           /* 整張不吃點擊，只有 X 例外 */
   position: relative;
-  padding: .6rem 2rem .6rem .75rem;
-  background: var(--panel); border-radius: 10px;
-  border-left: 5px solid var(--danger);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, .22);
+  padding: .45rem 1.5rem .45rem .6rem;
+  background: rgba(255, 255, 255, .88);
+  backdrop-filter: blur(2px);     /* 半透明也看得清字 */
+  border-radius: 8px;
+  border-left: 4px solid var(--danger);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .18);
 }
-.toast-title { font-weight: 700; color: var(--danger); font-size: .95rem; }
-.toast-drink { font-size: .9rem; margin-top: .1rem; }
-.toast-meta { font-size: .8rem; color: var(--muted); margin-top: .15rem; }
+.toast-title { font-weight: 700; color: var(--danger); font-size: .82rem; }
+.toast-drink { font-size: .78rem; margin-top: .05rem; }
+.toast-meta { font-size: .7rem; color: var(--muted); margin-top: .1rem; }
 .toast-close {
-  position: absolute; top: .25rem; right: .3rem;
-  width: 1.75rem; height: 1.75rem;   /* 手指點得到 */
+  pointer-events: auto;           /* 卡片裡唯一收得到點擊的東西 */
+  position: absolute; top: .15rem; right: .15rem;
+  width: 1.2rem; height: 1.2rem;  /* 刻意小：擋到的面積越小越好 */
   border: none; background: none; cursor: pointer;
-  color: var(--muted); font-size: .9rem; line-height: 1;
+  color: var(--muted); font-size: .7rem; line-height: 1; padding: 0;
 }
 .toast-close:hover { color: var(--text); }
 /* 超過同時顯示上限時排隊，只用一行告知還有幾則 */
 .toast-more {
-  padding: .4rem .75rem; text-align: center;
-  font-size: .8rem; color: var(--muted);
+  padding: .3rem .6rem; text-align: center;
+  font-size: .72rem; color: var(--muted);
   border-left-color: var(--border);
 }
 @media (max-width: 900px) {
-  /* 手機再往上抬一點，避開底部的操作按鈕與 iOS 的home indicator */
+  /* 手機再往上抬一點，避開底部的操作按鈕與 iOS 的 home indicator */
   .toast-stack {
     right: .75rem;
     bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
-    width: min(18rem, calc(100vw - 1.5rem));
+    width: 220px; max-width: calc(100vw - 1.5rem);
   }
 }
 
