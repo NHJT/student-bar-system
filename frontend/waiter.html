@@ -15,75 +15,80 @@
     </span>
   </header>
 
-  <!-- 版面：電腦左邊點餐，右邊上為待送達、下為本場訂單；
-       手機單欄時待送達排最前面（DOM 順序就是手機順序，不靠 order 硬搬） -->
+  <!-- 版面：左欄點餐＋已完成／已送達，右欄待送達＋本場訂單／付款。
+       分成兩個欄位容器，右欄的訂單清單變長才不會把已完成那一塊推到最底下。
+       手機是單欄，順序由 CSS 的 order 決定（待送達 → 點餐 → 本場訂單 → 已完成）。 -->
   <main class="waiter-layout">
-    <!-- 待送達：吧台一按「完成」就會即時出現在這裡 -->
-    <section class="panel deliver-panel" id="deliver-panel">
-      <h2>
-        🚚 待送達
-        <span id="deliver-count" class="count-badge" hidden>0</span>
-        <small>逾 10 分未送出</small>
-      </h2>
-      <ul id="queue-completed" class="order-queue"></ul>
-    </section>
-
-    <!-- 點餐區：先把品項一項一項加進本次訂單，最後整張送出 -->
-    <section class="panel panel-order">
-      <h2>點餐</h2>
-      <label class="field">桌號
-        <select id="table-number" required></select>
-      </label>
-
-      <form id="add-item-form">
-        <!-- 兩段式選酒：先選基酒分類，飲料選單只列該分類的酒 -->
-        <label class="field">基酒
-          <select id="category-select" required></select>
-        </label>
-        <label class="field">飲料
-          <select id="drink-select" required></select>
+    <div class="col-left">
+      <!-- 點餐區：先把品項一項一項加進本次訂單，最後整張送出 -->
+      <section class="panel panel-order">
+        <h2>點餐</h2>
+        <label class="field">桌號
+          <select id="table-number" required></select>
         </label>
 
-        <label class="field">特殊需求
-          <input type="text" id="special-request" placeholder="例：少冰、去薄荷">
-        </label>
-        <button type="submit" class="btn btn-action btn-primary">＋ 加入訂單</button>
-      </form>
+        <form id="add-item-form">
+          <!-- 兩段式選酒：先選基酒分類，飲料選單只列該分類的酒 -->
+          <label class="field">基酒
+            <select id="category-select" required></select>
+          </label>
+          <label class="field">飲料
+            <select id="drink-select" required></select>
+          </label>
 
-      <!-- 一杯酒就是一張訂單：購物車裡每一列送出後各自成為一張單 -->
-      <h2>本次訂單 <small id="cart-count" class="cart-count"></small></h2>
-      <ul id="cart-list" class="cart-list">
-        <li class="placeholder">還沒加入任何品項</li>
-      </ul>
-      <!-- 送出與清空放在清單右下角，離「加入訂單」夠遠，避免誤觸 -->
-      <div class="cart-actions">
-        <button id="cart-clear" class="btn btn-small btn-ghost" disabled>清空</button>
-        <!-- 按鈕文字由 waiter.js 依購物車金額改寫成「已收款 $N 並送出」 -->
-        <button id="cart-submit" class="btn btn-action btn-primary" disabled>已收款並送出</button>
-      </div>
-    </section>
+          <label class="field">特殊需求
+            <input type="text" id="special-request" placeholder="例：少冰、去薄荷">
+          </label>
+          <button type="submit" class="btn btn-action btn-primary">＋ 加入訂單</button>
+        </form>
 
-    <!-- 訂單與付款區：重點是付款狀態，未付款排最上面，
-         已付款且已送達的縮成一行，點一下才展開品項 -->
-    <section class="panel panel-paylist">
-      <h2>本場訂單／付款 <small id="unpaid-count" class="pay-count"></small></h2>
-      <ul id="order-list" class="order-list compact">
-        <li class="placeholder">尚無訂單</li>
-      </ul>
-    </section>
+        <!-- 一杯酒就是一張訂單：購物車裡每一列送出後各自成為一張單 -->
+        <h2>本次訂單 <small id="cart-count" class="cart-count"></small></h2>
+        <ul id="cart-list" class="cart-list">
+          <li class="placeholder">還沒加入任何品項</li>
+        </ul>
+        <!-- 送出與清空放在清單右下角，離「加入訂單」夠遠，避免誤觸 -->
+        <div class="cart-actions">
+          <button id="cart-clear" class="btn btn-small btn-ghost" disabled>清空</button>
+          <!-- 按鈕文字由 waiter.js 依購物車金額改寫成「已收款 $N 並送出」 -->
+          <button id="cart-submit" class="btn btn-action btn-primary" disabled>已收款並送出</button>
+        </div>
+      </section>
 
-    <!-- 已完成／已送達：只列當日（?today=true），預設收合。
-         送出去的單不會消失，可以回頭核對四個階段的時間，也能退回上一步。 -->
-    <section class="panel done-panel">
-      <h2>
-        <button id="done-toggle" class="done-toggle" aria-expanded="false">
-          <span id="done-caret">▸</span> ✅ 已完成／已送達
-        </button>
-        <span id="done-count" class="count-badge" hidden>0</span>
-        <small>本日，新的在前</small>
-      </h2>
-      <ul id="queue-done" class="order-queue" hidden></ul>
-    </section>
+      <!-- 已完成／已送達：只列當日（?today=true），預設收合。
+           送出去的單不會消失，可以回頭核對四個階段的時間，也能退回上一步。 -->
+      <section class="panel done-panel">
+        <h2>
+          <button id="done-toggle" class="done-toggle" aria-expanded="false">
+            <span id="done-caret">▸</span> ✅ 已完成／已送達
+          </button>
+          <span id="done-count" class="count-badge" hidden>0</span>
+          <small>本日，新的在前</small>
+        </h2>
+        <ul id="queue-done" class="order-queue" hidden></ul>
+      </section>
+    </div>
+
+    <div class="col-right">
+      <!-- 待送達：吧台一按「完成」就會即時出現在這裡 -->
+      <section class="panel deliver-panel" id="deliver-panel">
+        <h2>
+          🚚 待送達
+          <span id="deliver-count" class="count-badge" hidden>0</span>
+          <small>逾 10 分未送出</small>
+        </h2>
+        <ul id="queue-completed" class="order-queue"></ul>
+      </section>
+
+      <!-- 訂單與付款區：重點是付款狀態，未付款排最上面，
+           已付款且已送達的縮成一行，點一下才展開品項 -->
+      <section class="panel panel-paylist">
+        <h2>本場訂單／付款 <small id="unpaid-count" class="pay-count"></small></h2>
+        <ul id="order-list" class="order-list compact">
+          <li class="placeholder">尚無訂單</li>
+        </ul>
+      </section>
+    </div>
   </main>
 
   <!-- Andon 超時跳出視窗（待送達超過門檻時） -->
