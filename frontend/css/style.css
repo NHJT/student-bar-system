@@ -385,6 +385,14 @@ form input, form select,
 /* 本場訂單／付款：版面讓給還要處理的訂單，所以整欄收緊 */
 .pay-count { color: var(--muted); font-weight: 400; font-size: .8rem; }
 .pay-count.pay-count-warn { color: var(--danger); font-weight: 600; }
+/* 新單排在清單底部，標題旁提示一下；點一下捲過去 */
+.new-order-hint {
+  margin-left: .4rem; padding: .15rem .5rem;
+  border: 1px solid var(--primary); border-radius: 999px;
+  background: #eef4ff; color: var(--primary);
+  font-size: .75rem; font-weight: 600; cursor: pointer;
+}
+.new-order-hint[hidden] { display: none; }
 /* 前一營業日殘留、還沒結清的單 */
 .badge-stale { background: #fff1dd; color: #8a4a00; }
 .order-list.compact li.order-stale { border-left: 4px solid var(--warning); }
