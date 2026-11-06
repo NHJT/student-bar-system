@@ -212,7 +212,7 @@ form input, form select,
    手指點下去仍然是按到底下的按鈕，不會被提示吃掉。 */
 .toast-stack {
   position: fixed; z-index: 50;
-  right: 1rem; bottom: 1rem;
+  left: 1rem; bottom: 1rem;
   display: flex; flex-direction: column; gap: .4rem;
   width: 240px; max-width: calc(100vw - 2rem);
   pointer-events: none;
@@ -266,7 +266,7 @@ form input, form select,
 @media (max-width: 900px) {
   /* 手機再往上抬一點，避開底部的操作按鈕與 iOS 的 home indicator */
   .toast-stack {
-    right: .75rem;
+    left: .75rem;
     bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
     width: 220px; max-width: calc(100vw - 1.5rem);
   }

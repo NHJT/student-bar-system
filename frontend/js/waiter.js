@@ -54,12 +54,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const alerted = new Set(); // 已經跳過超時提醒的訂單，key = 訂單id:狀態
 
   setupAudioUnlock();
-  const showAndon = setupAndonToasts();
+  // 浮動提示（超時警報、操作成功）只在吧台頁顯示。
+  // 這一頁畫面本來就滿，左下角的提示會壓到購物車與「已收款並送出」，
+  // 所以不呼叫 setupAndonToasts／showActionToast；
+  // 紅色逾時卡片（.overdue）與警示音照舊。
   // 防誤動：重繪會讓卡片往上跳，手指按下去和放開時可能不是同一張單
   const guard = createClickGuard();
 
-  // 按鈕所在那張卡片的「桌號 飲料」。重繪後卡片可能已經換區了，
-  // 成功提示要靠這段文字講清楚剛剛動到的是哪一張單
+  // 按鈕所在那張卡片的「桌號 飲料」，給取消／補標的二次確認用，
+  // 讓對話框講清楚要動到的是哪一張單
   function cardLabel(btn) {
     const li = btn.closest("li[data-id], li[data-order]");
     if (!li) return "";
@@ -404,12 +407,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (groupRevert === undefined) return;
     if (!guard.allow(btn)) return; // 卡片剛位移過，這一次不算數
 
-    const label = cardLabel(btn);
     try {
       await guard.lock(async () => {
         // 誤觸要能快速修正，所以不做二次確認
-        const after = await apiSend("PATCH", `/orders/${groupRevert}/revert`);
-        showActionToast(`${label} → ${STATUS_LABELS[after.status]}`);
+        await apiSend("PATCH", `/orders/${groupRevert}/revert`);
         await refreshOrders();
       });
     } catch (err) {
@@ -418,10 +419,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Andon：待送達停留超過門檻就整張變紅、跳視窗、響警示音。
+  // Andon：待送達停留超過門檻就整張變紅、響警示音（浮動提示只在吧台頁）。
   // 門檻與計時基準都沿用 common.js，和原本吧台頁的那一類完全相同。
   function updateAndon() {
-    const fresh = [];
+    let fresh = 0; // 這一輪新變紅的張數，只用來決定要不要響警示音
     // 灰卡只是殘影，不計時也不觸發警報
     deliverList.querySelectorAll("li[data-id]:not(.card-leaving)").forEach((li) => {
       const state = andonState(li.dataset.status, li.dataset.ref);
@@ -433,18 +434,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const key = `${li.dataset.id}:${li.dataset.status}`;
       if (overdue && !alerted.has(key)) {
         alerted.add(key);
-        fresh.push({
-          table: li.dataset.table,
-          summary: li.dataset.summary,
-          stage: ANDON_STAGE_LABELS[li.dataset.status],
-          minutes,
-        });
+        fresh += 1;
       }
     });
-    if (fresh.length) {
-      showAndon(fresh);
-      playAlarm();
-    }
+    if (fresh) playAlarm();
   }
 
   // 總等待時間（下單到現在）。純顯示，不碰上面的超時判斷與警示音。
@@ -464,16 +457,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if (groupNext === undefined && groupRevert === undefined) return;
     if (!guard.allow(btn)) return; // 卡片剛位移過，這一次不算數
 
-    const label = cardLabel(btn);
     try {
       await guard.lock(async () => {
         if (groupRevert !== undefined) {
           // 誤觸要能快速修正，所以不做二次確認
-          const after = await apiSend("PATCH", `/orders/${groupRevert}/revert`);
-          showActionToast(`${label} → ${STATUS_LABELS[after.status]}`);
+          await apiSend("PATCH", `/orders/${groupRevert}/revert`);
         } else {
           await apiSend("PATCH", `/orders/${groupNext}/status`, { status: nextStatus });
-          showActionToast(`${label} → ${STATUS_LABELS[nextStatus]}`);
         }
         await refreshOrders();
       });
@@ -810,7 +800,6 @@ document.addEventListener("DOMContentLoaded", () => {
       if (pay) {
         await guard.lock(async () => {
           await apiSend("PATCH", `/orders/${pay}/payment`, { payment_status: "paid" });
-          showActionToast(`${label} → 已付款`);
           await refreshOrders();
         });
       } else if (edit) {
@@ -821,7 +810,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!confirm(`確定要取消訂單 #${cancel}（${label}）？食材會退回庫存。`)) return;
         await guard.lock(async () => {
           await apiSend("PATCH", `/orders/${cancel}/status`, { status: "cancelled" });
-          showActionToast(`${label} → 已取消`);
           await refreshOrders();
         });
       } else if (finish !== undefined) {
@@ -833,7 +821,6 @@ document.addEventListener("DOMContentLoaded", () => {
           for (const next of path) {
             await apiSend("PATCH", `/orders/${finish}/status`, { status: next });
           }
-          showActionToast(`${label} → 已送達`);
           await refreshOrders();
         });
       } else if (save) {
@@ -856,7 +843,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         await guard.lock(async () => {
           await apiSend("PATCH", `/orders/${save}`, payload);
-          showActionToast(`${label} → 已更新`);
         });
         await closeEditor();
       }
