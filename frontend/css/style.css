@@ -252,8 +252,10 @@ form input, form select,
   30%      { box-shadow: 0 0 0 3px rgba(217, 65, 65, .5); }
   65%      { box-shadow: 0 0 0 3px rgba(217, 65, 65, .2); }
 }
-/* 剛離開這一區的卡片：留 2 秒、標灰、完全不吃點擊，
-   後面的卡片才不會瞬間往上補位，手指按到別張單 */
+/* 剛離開這一區的卡片：留一下、標灰、完全不吃點擊，
+   後面的卡片才不會瞬間往上補位，手指按到別張單。
+   「留多久」只由 common.js 的 CARD_LEAVING_MS 決定（目前 1 秒），
+   這裡不要再寫一次秒數。下面的 .3s 是變灰的淡入，和停留時間無關。 */
 .card-leaving {
   opacity: .4; filter: grayscale(1);
   pointer-events: none;
