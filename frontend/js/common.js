@@ -264,9 +264,13 @@ function createClickGuard(root = document) {
  *   3. 卡片增減或順序改變   → 重繪並冷卻。只有這時候才可能按錯張
  */
 function createListRenderer(listEl, guard, idAttr = "data-id") {
-  const leaving = new Map(); // id -> {html, expires}
+  const leaving = new Map(); // id -> {html, index, expires}
   let lastHtml = null;
   let lastOrder = ""; // 上一次的 id 順序
+
+  // 這個清單裡的「卡片」。placeholder 與「顯示全部」那一列沒有 idAttr，
+  // 算位置時不能把它們算進去，插回去也不能壓到它們。
+  const cards = () => [...listEl.querySelectorAll(`[${idAttr}]`)];
 
   return function render(html, ids) {
     if (html === lastHtml && !leaving.size) return; // 情況 1
@@ -275,32 +279,54 @@ function createListRenderer(listEl, guard, idAttr = "data-id") {
     lastHtml = html;
     lastOrder = order;
 
-    // 先記下這一輪不見的卡片，用的是它重繪前的樣子
-    for (const el of listEl.querySelectorAll(`[${idAttr}]`)) {
-      if (el.classList.contains("card-leaving")) continue;
+    // 先記下這一輪不見的卡片：長相，還有它原本排在第幾張。
+    // 要連 index 一起記，灰卡才能留在原位；只 append 到最後面的話，
+    // 它後面的卡片照樣立刻往上補位，等於沒擋到。
+    cards().forEach((el, index) => {
+      if (el.classList.contains("card-leaving")) return;
       const id = el.getAttribute(idAttr);
       if (!ids.has(id)) {
         leaving.set(id, {
           html: el.outerHTML,
+          index,
           expires: Date.now() + CARD_LEAVING_MS,
         });
       }
-    }
+    });
 
     listEl.innerHTML = html;
 
+    // 由小到大插回去：先插前面的，後面的 index 才不會被自己擠掉
     const now = Date.now();
-    for (const [id, item] of [...leaving]) {
-      if (item.expires <= now || ids.has(id)) {
-        leaving.delete(id); // 過期了，或是它又回來了（例如被退回上一步）
+    const back = [...leaving.entries()]
+      .filter(([id, item]) => {
+        if (item.expires <= now || ids.has(id)) {
+          leaving.delete(id); // 過期了，或是它又回來了（例如被退回上一步）
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => a[1].index - b[1].index);
+
+    for (const [id, item] of back) {
+      const here = cards();
+      const ghost = document.createElement("template");
+      ghost.innerHTML = item.html.trim();
+      const node = ghost.content.firstElementChild;
+      if (!node) {
+        leaving.delete(id);
         continue;
       }
-      listEl.insertAdjacentHTML("beforeend", item.html);
-      const ghost = listEl.lastElementChild;
-      ghost.classList.add("card-leaving");
+      node.classList.add("card-leaving");
+      // 插在原本那個位置的卡片前面；超過長度就接在最後一張卡片後面。
+      // 用卡片當定位點，placeholder 與「顯示全部」那一列不會被插到中間。
+      if (item.index < here.length) here[item.index].before(node);
+      else if (here.length) here[here.length - 1].after(node);
+      else listEl.prepend(node);
+
       setTimeout(() => {
         if (Date.now() >= item.expires) leaving.delete(id);
-        ghost.remove();
+        node.remove();
       }, item.expires - now);
     }
 

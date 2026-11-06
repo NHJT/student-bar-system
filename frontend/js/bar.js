@@ -94,7 +94,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function updateAndon() {
     const fresh = [];
     document.querySelectorAll(
-      "#queue-new li[data-id], #queue-preparing li[data-id]"
+      // 灰卡只是殘影，不計時也不觸發警報
+      "#queue-new li[data-id]:not(.card-leaving), " +
+        "#queue-preparing li[data-id]:not(.card-leaving)"
     ).forEach((li) => {
       const status = li.dataset.status;
       const state = andonState(status, li.dataset.ref);
@@ -124,7 +126,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 總等待時間（下單到現在）。純顯示，不碰上面的超時判斷與警示音。
   function updateTotalWait() {
-    document.querySelectorAll(".order-queue li[data-id]").forEach(renderTotalWait);
+    document
+      .querySelectorAll(".order-queue li[data-id]:not(.card-leaving)")
+      .forEach(renderTotalWait);
   }
 
   async function refresh() {

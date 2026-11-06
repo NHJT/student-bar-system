@@ -392,7 +392,9 @@ document.addEventListener("DOMContentLoaded", () => {
         : '<li class="placeholder">本日還沒有完成的訂單</li>',
       new Set(done.map((o) => String(o.id)))
     );
-    doneList.querySelectorAll("li[data-id]").forEach(renderTotalWait);
+    doneList
+      .querySelectorAll("li[data-id]:not(.card-leaving)")
+      .forEach(renderTotalWait);
   }
 
   doneList.addEventListener("click", async (e) => {
@@ -420,7 +422,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // 門檻與計時基準都沿用 common.js，和原本吧台頁的那一類完全相同。
   function updateAndon() {
     const fresh = [];
-    deliverList.querySelectorAll("li[data-id]").forEach((li) => {
+    // 灰卡只是殘影，不計時也不觸發警報
+    deliverList.querySelectorAll("li[data-id]:not(.card-leaving)").forEach((li) => {
       const state = andonState(li.dataset.status, li.dataset.ref);
       if (!state) return;
       const { minutes, limit, overdue } = state;
@@ -446,8 +449,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 總等待時間（下單到現在）。純顯示，不碰上面的超時判斷與警示音。
   function updateTotalWait() {
-    deliverList.querySelectorAll("li[data-id]").forEach(renderTotalWait);
-    orderList.querySelectorAll("li[data-order]").forEach(renderTotalWait);
+    deliverList
+      .querySelectorAll("li[data-id]:not(.card-leaving)")
+      .forEach(renderTotalWait);
+    orderList
+      .querySelectorAll("li[data-order]:not(.card-leaving)")
+      .forEach(renderTotalWait);
   }
 
   deliverList.addEventListener("click", async (e) => {
