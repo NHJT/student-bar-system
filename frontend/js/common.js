@@ -369,13 +369,24 @@ function toastStack(containerId = "andon-toasts") {
 // 的依據，所以一定要帶桌號與飲料名，不能只說「已更新」。
 const ACTION_TOAST_TTL = 4000;
 
+// 任何一張提示消失後都要回頭看看有沒有警報在排隊。操作提示和警報共用同一疊，
+// 操作提示到期卻不通知的話，排隊中的警報會一直卡著不出來。
+const toastDrains = new Set();
+
+function drainToasts() {
+  for (const drain of toastDrains) drain();
+}
+
 function showActionToast(text) {
   const box = toastStack();
   const card = document.createElement("div");
   card.className = "toast toast-action";
   card.textContent = text;
   box.appendChild(card);
-  setTimeout(() => card.remove(), ACTION_TOAST_TTL);
+  setTimeout(() => {
+    card.remove();
+    drainToasts();
+  }, ACTION_TOAST_TTL);
 }
 
 function setupAndonToasts(containerId = "andon-toasts") {
@@ -383,6 +394,16 @@ function setupAndonToasts(containerId = "andon-toasts") {
 
   const pending = []; // 超過上限時排隊，前面的消失後再補上
   let moreEl = null;
+
+  // 同時最多幾張只算「警報」。操作提示（.toast-action）和「還有 N 則」
+  // 都不佔名額——連按幾下產生幾張操作提示，不該把超時警報擠掉。
+  const andonCount = () => box.querySelectorAll(".toast-andon").length;
+
+  function drain() {
+    while (pending.length && andonCount() < ANDON_TOAST_MAX) show(pending.shift());
+    renderMore();
+  }
+  toastDrains.add(drain);
 
   function renderMore() {
     if (!pending.length) {
@@ -402,13 +423,12 @@ function setupAndonToasts(containerId = "andon-toasts") {
   function dismiss(card) {
     if (!card.isConnected) return; // X 按過了就不要再被計時器關一次
     card.remove();
-    if (pending.length) show(pending.shift());
-    renderMore();
+    drain();
   }
 
   function show(item) {
     const card = document.createElement("div");
-    card.className = "toast";
+    card.className = "toast toast-andon";
     card.innerHTML = `
       <button class="toast-close" aria-label="關閉提示">✕</button>
       <div class="toast-title">⚠️ ${escapeHtml(tableLabel(item.table))}</div>
@@ -422,7 +442,7 @@ function setupAndonToasts(containerId = "andon-toasts") {
 
   return (items) => {
     for (const item of items) {
-      if (box.querySelectorAll(".toast:not(.toast-more)").length >= ANDON_TOAST_MAX) {
+      if (andonCount() >= ANDON_TOAST_MAX) {
         pending.push(item);
         renderMore();
       } else {
