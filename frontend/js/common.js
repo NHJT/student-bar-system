@@ -326,7 +326,11 @@ function createListRenderer(listEl, guard, idAttr = "data-id") {
 
       setTimeout(() => {
         if (Date.now() >= item.expires) leaving.delete(id);
+        if (!node.isConnected) return; // 已經被後來的重繪換掉了，位置沒有變動
         node.remove();
+        // 灰卡消失的這一刻，後面的卡片才真的往上補位——和重繪造成的位移
+        // 一樣危險，所以同樣要冷卻並更新版本號
+        guard.markShifted();
       }, item.expires - now);
     }
 
