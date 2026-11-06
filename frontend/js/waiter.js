@@ -734,6 +734,10 @@ document.addEventListener("DOMContentLoaded", () => {
     editingId = id;
     const li = orderList.querySelector(`li[data-order="${id}"]`);
     if (li) li.outerHTML = editRow(order);
+    // 這一列被換成編輯表單，但 renderOrderList 記著的還是換掉之前的 html。
+    // 不作廢的話，按「放棄」而且期間沒有任何資料變動時，重繪會算出一模一樣
+    // 的 html 而被當成「沒變化」跳過，編輯表單就留在畫面上清不掉。
+    renderOrderList.invalidate();
     updateEditMoney();
   }
 
@@ -852,16 +856,23 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  loadDrinks();
+  guardedRefresh(loadDrinks);
   renderCart();
   // 即時更新：訂單事件刷新訂單列表；經理端改動酒單時同步更新下拉選單；
-  // 重連成功時補抓斷線期間的變化
+  // 重連成功時補抓斷線期間的變化。
+  // 一律經過 guardedRefresh：後端出錯時狀態列會轉成「資料更新失敗，重試中」，
+  // 不會讓畫面停在舊資料卻還寫著「已連線」。
   connectWebSocket(
-    (msg) => {
-      if (msg.event?.startsWith("order_")) refreshOrders();
-      if (msg.event?.startsWith("drink_")) loadDrinks();
+    async (msg) => {
+      if (msg.event?.startsWith("order_")) await guardedRefresh(refreshOrders);
+      if (msg.event?.startsWith("drink_")) await guardedRefresh(loadDrinks);
     },
-    () => { loadDrinks(); refreshOrders(); }
+    async () => {
+      await guardedRefresh(async () => {
+        await loadDrinks();
+        await refreshOrders();
+      });
+    }
   );
 
   // Andon 每 10 秒重算一次（不用重抓資料，只更新等待時間與變紅）

@@ -260,8 +260,15 @@ function createClickGuard(root = document) {
  * 三種情況分開處理，因為「重繪」和「卡片位移」不是同一件事：
  *   1. html 一模一樣       → 什麼都不做。尖峰時每幾秒一次推播，多數都是這種，
  *                            不碰 DOM 就不會打斷正在按的人（計時紅字是另外更新的）
- *   2. 內容變了但順序沒變   → 重繪，但不冷卻。手指底下還是同一張單的按鈕
- *   3. 卡片增減或順序改變   → 重繪並冷卻。只有這時候才可能按錯張
+ *   2. 內容變了而且沒人移動 → 重繪，但不冷卻。手指底下還是同一張單的按鈕
+ *   3. 卡片增減、順序改變，
+ *      或任何一張卡片真的
+ *      換了位置           → 重繪並冷卻。只有這時候才可能按錯張
+ *
+ * 情況 2 和 3 不能只看 id 順序：卡片「變矮」一樣會讓下面整排往上跳。
+ * 例如付款清單裡一張單收完錢又送達之後，會從一般卡片（69–125px）縮成
+ * 已結清的一行（35px），id 順序完全沒變，但它底下每一張都位移了 30–80px。
+ * 所以改成重繪前後各量一次位置，有人真的動了就冷卻。
  */
 function createListRenderer(listEl, guard, idAttr = "data-id") {
   const leaving = new Map(); // id -> {html, index, expires}
@@ -272,10 +279,39 @@ function createListRenderer(listEl, guard, idAttr = "data-id") {
   // 算位置時不能把它們算進去，插回去也不能壓到它們。
   const cards = () => [...listEl.querySelectorAll(`[${idAttr}]`)];
 
-  return function render(html, ids) {
+  // 量一次：每張卡片的上緣，外加整個清單的高度。
+  // 一次把該讀的讀完再去動 DOM，整個重繪只會觸發兩次 layout，
+  // 不要邊讀邊寫（layout thrashing）。
+  //
+  // 灰卡不列入：它存在的目的就是佔住位置，佔著的時候等於沒有人移動。
+  // 清單高度也要記——這一區變矮，頁面上排在它後面的東西（例如右欄的
+  // 待送達縮短時，下面的付款清單）會整塊往上跳，光看卡片看不出來。
+  function snapshot() {
+    const tops = new Map();
+    for (const el of cards()) {
+      if (el.classList.contains("card-leaving")) continue;
+      tops.set(el.getAttribute(idAttr), el.getBoundingClientRect().top);
+    }
+    return { tops, height: listEl.getBoundingClientRect().height };
+  }
+
+  // 同一張卡片（同 id）的上緣移動超過 1px 就算位移；1px 以內當捨入誤差。
+  // 只有一邊才有的 id 不在這裡判斷：卡片離開時有灰卡頂著就沒人位移，
+  // 真的造成位移的話，下面那些同 id 的卡片自己會被量出來。
+  function hasMoved(before, after) {
+    if (Math.abs(after.height - before.height) > 1) return true;
+    for (const [id, top] of after.tops) {
+      const was = before.tops.get(id);
+      if (was !== undefined && Math.abs(top - was) > 1) return true;
+    }
+    return false;
+  }
+
+  function render(html, ids) {
     if (html === lastHtml && !leaving.size) return; // 情況 1
     const order = [...ids].join(",");
-    const shifted = order !== lastOrder;
+    const orderChanged = order !== lastOrder;
+    const before = snapshot(); // 動 DOM 之前先量
     lastHtml = html;
     lastOrder = order;
 
@@ -334,8 +370,19 @@ function createListRenderer(listEl, guard, idAttr = "data-id") {
       }, item.expires - now);
     }
 
-    if (shifted) guard.markShifted(); // 情況 3 才冷卻
+    // 情況 3 才冷卻：id 順序變了（卡片增減／排序改變，原本就會擋），
+    // 或是量出來真的有卡片換了位置（高度變化造成的位移）。
+    if (orderChanged || hasMoved(before, snapshot())) guard.markShifted();
+  }
+
+  // 有人從外面直接動了這個清單的 DOM（例如服務生頁把某一列換成編輯表單）時，
+  // 要呼叫這個。不然 lastHtml 還停在被改之前的樣子，下一次重繪如果算出
+  // 一模一樣的 html，就會走「情況 1：什麼都不做」的捷徑——外面改的東西
+  // 留在畫面上清不掉。
+  render.invalidate = () => {
+    lastHtml = null;
   };
+  return render;
 }
 
 // Andon 超時提示：右下角的小卡片，不是全螢幕視窗。
@@ -499,21 +546,78 @@ function statusBadge(status) {
   return `<span class="badge badge-${status}">${STATUS_LABELS[status] ?? status}</span>`;
 }
 
+// ---------------------------------------------------------------------------
+// 右上角的連線狀態列。
+//
+// 「連線還在」和「資料是新的」是兩回事：後端短暫出錯時 WebSocket 照常連著，
+// 但重抓訂單會失敗，畫面就停在舊資料——而狀態列還寫著「已連線」，現場完全
+// 看不出有問題。所以狀態由兩個條件一起決定，斷線優先。
+// ---------------------------------------------------------------------------
+const WS_STATUS = {
+  connected: ["● 已連線", "ws-status connected"],
+  disconnected: ["● 已斷線，5 秒後重連", "ws-status disconnected"],
+  stale: ["● 資料更新失敗，重試中", "ws-status stale"],
+};
+
+let wsConnected = false;
+let wsDataFresh = true;
+
+function renderWsStatus() {
+  const el = document.getElementById("ws-status");
+  if (!el) return;
+  const key = !wsConnected ? "disconnected" : wsDataFresh ? "connected" : "stale";
+  [el.textContent, el.className] = WS_STATUS[key];
+}
+
+/**
+ * 把一次「重抓資料並重繪」包起來。
+ *
+ * 不包的話，await 掉的 promise 一旦 reject 就只會變成主控台裡的
+ * unhandled rejection，畫面照舊顯示「已連線」卻停在舊資料。
+ * 失敗時把狀態列轉成警示，下一次成功（推播或重連都會再試）自動恢復。
+ */
+async function guardedRefresh(fn) {
+  try {
+    await fn();
+    if (!wsDataFresh) {
+      wsDataFresh = true;
+      renderWsStatus();
+    }
+  } catch (err) {
+    wsDataFresh = false;
+    renderWsStatus();
+    console.error("資料更新失敗", err);
+  }
+}
+
 // 建立 WebSocket 連線
 // - onMessage: 收到伺服器廣播的事件物件（{event: "order_created", order: {...}} 等）
 // - onOpen: 連上（含斷線重連成功）時呼叫，用來補抓斷線期間錯過的資料
 function connectWebSocket(onMessage, onOpen) {
-  const statusEl = document.getElementById("ws-status");
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${proto}://${location.host}/ws`);
 
-  ws.onopen = () => {
-    if (statusEl) { statusEl.textContent = "● 已連線"; statusEl.className = "ws-status connected"; }
-    if (onOpen) onOpen();
+  ws.onopen = async () => {
+    wsConnected = true;
+    renderWsStatus();
+    // onOpen 可能是 async：一定要 await 並接住，否則重連後的補抓失敗
+    // 同樣會變成沒人看見的 unhandled rejection
+    try {
+      if (onOpen) await onOpen();
+    } catch (err) {
+      console.error("重連後補抓資料失敗", err);
+    }
   };
-  ws.onmessage = (e) => onMessage(JSON.parse(e.data));
+  ws.onmessage = async (e) => {
+    try {
+      await onMessage(JSON.parse(e.data));
+    } catch (err) {
+      console.error("處理推播失敗", err);
+    }
+  };
   ws.onclose = () => {
-    if (statusEl) { statusEl.textContent = "● 已斷線，5 秒後重連"; statusEl.className = "ws-status disconnected"; }
+    wsConnected = false;
+    renderWsStatus();
     setTimeout(() => connectWebSocket(onMessage, onOpen), 5000);
   };
   return ws;

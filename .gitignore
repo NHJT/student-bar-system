@@ -11,6 +11,9 @@ venv/
 # backup_db.py 的資料庫備份：含完整營運資料，絕對不要進版控
 backups/
 
+# export_recipes.py 等腳本的輸出
+exports/
+
 # 舊版 SQLite 遺留檔案
 *.db
 *.sqlite3

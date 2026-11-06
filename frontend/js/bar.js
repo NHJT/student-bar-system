@@ -247,10 +247,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // 即時更新：收到訂單事件就刷新；重連成功時補抓斷線期間的變化
+  // 即時更新：收到訂單事件就刷新；重連成功時補抓斷線期間的變化。
+  // 一律經過 guardedRefresh：後端出錯時狀態列會轉成「資料更新失敗，重試中」，
+  // 不會讓畫面停在舊資料卻還寫著「已連線」。
   connectWebSocket(
-    (msg) => { if (msg.event?.startsWith("order_")) refresh(); },
-    () => refresh()
+    async (msg) => {
+      if (msg.event?.startsWith("order_")) await guardedRefresh(refresh);
+    },
+    async () => { await guardedRefresh(refresh); }
   );
 
   // Andon 每 10 秒重算一次（不用重抓資料，只更新等待時間與變紅）
