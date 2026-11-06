@@ -872,7 +872,10 @@ document.addEventListener("DOMContentLoaded", () => {
         await loadDrinks();
         await refreshOrders();
       });
-    }
+    },
+    // 保底輪詢只重抓訂單：酒單很少變，而且 drink_ 事件會推播，
+    // 不需要每 10 秒重建一次下拉選單
+    refreshOrders
   );
 
   // Andon 每 10 秒重算一次（不用重抓資料，只更新等待時間與變紅）

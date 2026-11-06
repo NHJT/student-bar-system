@@ -263,22 +263,22 @@ function createClickGuard(root = document) {
  * 回傳 render(html, ids)，ids 是這次還在的卡片 id 字串集合。
  *
  * 三種情況分開處理，因為「重繪」和「卡片位移」不是同一件事：
- *   1. html 一模一樣       → 什麼都不做。尖峰時每幾秒一次推播，多數都是這種，
- *                            不碰 DOM 就不會打斷正在按的人（計時紅字是另外更新的）
- *   2. 內容變了而且沒人移動 → 重繪，但不冷卻。手指底下還是同一張單的按鈕
- *   3. 卡片增減、順序改變，
- *      或任何一張卡片真的
- *      換了位置           → 重繪並冷卻。只有這時候才可能按錯張
+ *   1. html 一模一樣     → 什麼都不做。尖峰時每幾秒一次推播，多數都是這種，
+ *                          不碰 DOM 就不會打斷正在按的人（計時紅字是另外更新的）
+ *   2. 重繪了但沒人移動   → 不冷卻。手指底下還是同一張單的按鈕。
+ *                          上面那張剛變成灰卡也算這一種——灰卡用原本的 outerHTML
+ *                          插回原本的位置，後面的卡片一步也沒動
+ *   3. 真的有卡片換位置   → 冷卻。只有這時候才可能按錯張
  *
- * 情況 2 和 3 不能只看 id 順序：卡片「變矮」一樣會讓下面整排往上跳。
- * 例如付款清單裡一張單收完錢又送達之後，會從一般卡片（69–125px）縮成
- * 已結清的一行（35px），id 順序完全沒變，但它底下每一張都位移了 30–80px。
- * 所以改成重繪前後各量一次位置，有人真的動了就冷卻。
+ * 判斷一律以「重繪前後各量一次實際位置」為準，不看 id 順序：
+ *   - 只看 id 順序會漏掉「卡片變矮」——付款清單裡一張單收完錢又送達之後，
+ *     會從一般卡片（69–125px）縮成已結清的一行（35px），id 順序完全沒變，
+ *     但它底下每一張都位移了 30–80px
+ *   - 只看 id 順序也會誤判「卡片離開」——灰卡頂著位置，其實沒人移動
  */
 function createListRenderer(listEl, guard, idAttr = "data-id") {
   const leaving = new Map(); // id -> {html, index, expires}
   let lastHtml = null;
-  let lastOrder = ""; // 上一次的 id 順序
 
   // 這個清單裡的「卡片」。placeholder 與「顯示全部」那一列沒有 idAttr，
   // 算位置時不能把它們算進去，插回去也不能壓到它們。
@@ -314,11 +314,8 @@ function createListRenderer(listEl, guard, idAttr = "data-id") {
 
   function render(html, ids) {
     if (html === lastHtml && !leaving.size) return; // 情況 1
-    const order = [...ids].join(",");
-    const orderChanged = order !== lastOrder;
     const before = snapshot(); // 動 DOM 之前先量
     lastHtml = html;
-    lastOrder = order;
 
     // 先記下這一輪不見的卡片：長相，還有它原本排在第幾張。
     // 要連 index 一起記，灰卡才能留在原位；只 append 到最後面的話，
@@ -375,9 +372,16 @@ function createListRenderer(listEl, guard, idAttr = "data-id") {
       }, item.expires - now);
     }
 
-    // 情況 3 才冷卻：id 順序變了（卡片增減／排序改變，原本就會擋），
-    // 或是量出來真的有卡片換了位置（高度變化造成的位移）。
-    if (orderChanged || hasMoved(before, snapshot())) guard.markShifted();
+    // 情況 3 才冷卻，而且只看「有沒有人真的動了」。
+    //
+    // 以前這裡還會因為 id 順序改變就冷卻，但卡片離開時灰卡用原本的 outerHTML
+    // 插回原本的 index，後面的卡片一步也沒移動——只是上面那張變灰而已，
+    // 卻讓所有按鈕冷卻 300ms，按的人會以為按鈕壞了。
+    // 真正會讓人按錯張的是「位置變了」，所以一律以量測為準：
+    //   - 新單插在前面／中間 → 下面同 id 的卡片 top 會動
+    //   - 新單插在最後、或最後一張變高變矮 → 清單總高度會變
+    //   - 灰卡到期補位 → 由上面 setTimeout 裡的 markShifted() 負責，不走這裡
+    if (hasMoved(before, snapshot())) guard.markShifted();
   }
 
   // 有人從外面直接動了這個清單的 DOM（例如服務生頁把某一列換成編輯表單）時，
@@ -595,16 +599,118 @@ async function guardedRefresh(fn) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 即時更新的三層保險。
+//
+// 只靠 WebSocket 會有一種看不出來的壞法：半開連線——中間的網路設備把 TCP
+// 收掉了，但瀏覽器這端仍然認為 socket 是 OPEN，onclose 不會觸發，也就不會
+// 重連。畫面從此停在舊資料，計時紅字還照常跳，看起來一切正常，現場只能按
+// F5。所以再加兩層：
+//
+//   1. WebSocket 推播  — 正常情況下最即時
+//   2. 前景輪詢        — 保底。不管 WebSocket 是否正常都照跑，最多 10 秒
+//                        畫面一定會更新一次
+//   3. 心跳            — 主動探測半開連線，連續沒回應就關掉走重連
+//
+// 輪詢走的是和推播完全相同的 refresh，所以一樣經過 createListRenderer，
+// 灰卡殘影與防誤觸冷卻都照舊，不會繞過去。
+// ---------------------------------------------------------------------------
+const POLL_MS = 10000; // 前景輪詢間隔
+const HEARTBEAT_MS = 25000; // 心跳間隔
+const HEARTBEAT_MISS_MAX = 2; // 連續幾次沒回應就重連
+
+let wsCurrent = null; // 目前這條連線，給 visibilitychange 檢查用
+let wsPoll = null; // 輪詢與回到前景時要跑的那個 refresh
+let wsPollTimer = null; // 輪詢計時器
+let wsReconnectPending = false; // 已經排好重連了，不要再排第二條
+
+// 保底輪詢和連線狀態無關，整頁只開一個，斷線等待重連的那幾秒也照跑。
+// 綁在 socket 上的話，斷線期間反而是最需要保底的時候卻停掉了。
+function wsStartPolling() {
+  if (wsPollTimer || !wsPoll) return;
+  wsPollTimer = setInterval(() => {
+    // 背景分頁不輪詢：瀏覽器本來就會嚴重節流，打了也是白打
+    if (document.visibilityState === "visible" && wsPoll) guardedRefresh(wsPoll);
+  }, POLL_MS);
+}
+
+function wsScheduleReconnect(onMessage, onOpen, onPoll, delay = 5000) {
+  if (wsReconnectPending) return; // 同時開兩條連線會收到重複推播
+  wsReconnectPending = true;
+  setTimeout(() => {
+    wsReconnectPending = false;
+    connectWebSocket(onMessage, onOpen, onPoll);
+  }, delay);
+}
+
+// 回到前景：平板休眠醒來後，socket 可能已經被系統收掉卻沒通知這一頁，
+// 計時器也可能整段被凍結。所以先無條件補一次完整更新，再確認連線還在。
+function wsWireVisibility(onMessage, onOpen, onPoll) {
+  if (wsWireVisibility.done) return;
+  wsWireVisibility.done = true;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    if (wsPoll) guardedRefresh(wsPoll);
+    const state = wsCurrent ? wsCurrent.readyState : WebSocket.CLOSED;
+    if (state === WebSocket.OPEN || state === WebSocket.CONNECTING) return;
+    // 已經關掉了：onclose 通常已經排好重連，這裡只補「連重連都沒排到」的情況
+    wsScheduleReconnect(onMessage, onOpen, onPoll, 0);
+  });
+}
+
 // 建立 WebSocket 連線
 // - onMessage: 收到伺服器廣播的事件物件（{event: "order_created", order: {...}} 等）
 // - onOpen: 連上（含斷線重連成功）時呼叫，用來補抓斷線期間錯過的資料
-function connectWebSocket(onMessage, onOpen) {
+// - onPoll: 前景每 POLL_MS 跑一次的保底更新；不給就不輪詢
+function connectWebSocket(onMessage, onOpen, onPoll) {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${proto}://${location.host}/ws`);
+  wsCurrent = ws;
+  wsPoll = onPoll ?? null;
+  wsWireVisibility(onMessage, onOpen, onPoll);
+  wsStartPolling();
+
+  let beatTimer = null;
+  let lastInbound = 0; // 最後一次收到任何訊息（推播或 pong）的時間
+  let pingedAt = null; // 最後一次送出心跳的時間
+  let misses = 0;
+  // 後端目前只收不回，收到過一次 pong 才表示它支援心跳。沒有的話心跳只負責
+  // 讓連線保持活動，不拿「沒回應」當成斷線的依據，免得每 50 秒白白重連一次。
+  let pongSeen = false;
+
+  // 只停這條連線的心跳；保底輪詢是整頁共用的，斷線期間要繼續跑
+  function stopBeat() {
+    if (beatTimer) clearInterval(beatTimer);
+    beatTimer = null;
+  }
+
+  function beat() {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    if (pingedAt !== null && lastInbound < pingedAt) misses += 1;
+    else misses = 0;
+    if (pongSeen && misses >= HEARTBEAT_MISS_MAX) {
+      console.warn("心跳連續沒有回應，關閉連線重連");
+      stopBeat();
+      try {
+        ws.close();
+      } catch (_) {
+        /* 已經斷了就關不起來，onclose 仍會把重連排進去 */
+      }
+      return;
+    }
+    pingedAt = Date.now();
+    try {
+      ws.send(JSON.stringify({ type: "ping" }));
+    } catch (err) {
+      console.error("心跳送不出去", err);
+    }
+  }
 
   ws.onopen = async () => {
     wsConnected = true;
     renderWsStatus();
+    lastInbound = Date.now();
+    beatTimer = setInterval(beat, HEARTBEAT_MS);
     // onOpen 可能是 async：一定要 await 並接住，否則重連後的補抓失敗
     // 同樣會變成沒人看見的 unhandled rejection
     try {
@@ -614,16 +720,26 @@ function connectWebSocket(onMessage, onOpen) {
     }
   };
   ws.onmessage = async (e) => {
+    lastInbound = Date.now(); // 有東西進來就表示這條連線還通
     try {
-      await onMessage(JSON.parse(e.data));
+      const msg = JSON.parse(e.data);
+      if (msg?.type === "pong") {
+        pongSeen = true;
+        return; // 心跳的回應不是業務事件，不要往下送
+      }
+      await onMessage(msg);
     } catch (err) {
       console.error("處理推播失敗", err);
     }
   };
+  // onerror 之後瀏覽器一定會再送 onclose，重連統一由 onclose 負責；
+  // 這裡只留個紀錄，方便事後對照是「連不上」還是「連上之後斷掉」
+  ws.onerror = () => console.warn("WebSocket 連線發生錯誤");
   ws.onclose = () => {
+    stopBeat();
     wsConnected = false;
     renderWsStatus();
-    setTimeout(() => connectWebSocket(onMessage, onOpen), 5000);
+    wsScheduleReconnect(onMessage, onOpen, onPoll);
   };
   return ws;
 }
