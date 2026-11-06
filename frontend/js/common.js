@@ -263,22 +263,22 @@ function createClickGuard(root = document) {
  * 回傳 render(html, ids)，ids 是這次還在的卡片 id 字串集合。
  *
  * 三種情況分開處理，因為「重繪」和「卡片位移」不是同一件事：
- *   1. html 一模一樣       → 什麼都不做。尖峰時每幾秒一次推播，多數都是這種，
- *                            不碰 DOM 就不會打斷正在按的人（計時紅字是另外更新的）
- *   2. 內容變了而且沒人移動 → 重繪，但不冷卻。手指底下還是同一張單的按鈕
- *   3. 卡片增減、順序改變，
- *      或任何一張卡片真的
- *      換了位置           → 重繪並冷卻。只有這時候才可能按錯張
+ *   1. html 一模一樣     → 什麼都不做。尖峰時每幾秒一次推播，多數都是這種，
+ *                          不碰 DOM 就不會打斷正在按的人（計時紅字是另外更新的）
+ *   2. 重繪了但沒人移動   → 不冷卻。手指底下還是同一張單的按鈕。
+ *                          上面那張剛變成灰卡也算這一種——灰卡用原本的 outerHTML
+ *                          插回原本的位置，後面的卡片一步也沒動
+ *   3. 真的有卡片換位置   → 冷卻。只有這時候才可能按錯張
  *
- * 情況 2 和 3 不能只看 id 順序：卡片「變矮」一樣會讓下面整排往上跳。
- * 例如付款清單裡一張單收完錢又送達之後，會從一般卡片（69–125px）縮成
- * 已結清的一行（35px），id 順序完全沒變，但它底下每一張都位移了 30–80px。
- * 所以改成重繪前後各量一次位置，有人真的動了就冷卻。
+ * 判斷一律以「重繪前後各量一次實際位置」為準，不看 id 順序：
+ *   - 只看 id 順序會漏掉「卡片變矮」——付款清單裡一張單收完錢又送達之後，
+ *     會從一般卡片（69–125px）縮成已結清的一行（35px），id 順序完全沒變，
+ *     但它底下每一張都位移了 30–80px
+ *   - 只看 id 順序也會誤判「卡片離開」——灰卡頂著位置，其實沒人移動
  */
 function createListRenderer(listEl, guard, idAttr = "data-id") {
   const leaving = new Map(); // id -> {html, index, expires}
   let lastHtml = null;
-  let lastOrder = ""; // 上一次的 id 順序
 
   // 這個清單裡的「卡片」。placeholder 與「顯示全部」那一列沒有 idAttr，
   // 算位置時不能把它們算進去，插回去也不能壓到它們。
@@ -314,11 +314,8 @@ function createListRenderer(listEl, guard, idAttr = "data-id") {
 
   function render(html, ids) {
     if (html === lastHtml && !leaving.size) return; // 情況 1
-    const order = [...ids].join(",");
-    const orderChanged = order !== lastOrder;
     const before = snapshot(); // 動 DOM 之前先量
     lastHtml = html;
-    lastOrder = order;
 
     // 先記下這一輪不見的卡片：長相，還有它原本排在第幾張。
     // 要連 index 一起記，灰卡才能留在原位；只 append 到最後面的話，
@@ -375,9 +372,16 @@ function createListRenderer(listEl, guard, idAttr = "data-id") {
       }, item.expires - now);
     }
 
-    // 情況 3 才冷卻：id 順序變了（卡片增減／排序改變，原本就會擋），
-    // 或是量出來真的有卡片換了位置（高度變化造成的位移）。
-    if (orderChanged || hasMoved(before, snapshot())) guard.markShifted();
+    // 情況 3 才冷卻，而且只看「有沒有人真的動了」。
+    //
+    // 以前這裡還會因為 id 順序改變就冷卻，但卡片離開時灰卡用原本的 outerHTML
+    // 插回原本的 index，後面的卡片一步也沒移動——只是上面那張變灰而已，
+    // 卻讓所有按鈕冷卻 300ms，按的人會以為按鈕壞了。
+    // 真正會讓人按錯張的是「位置變了」，所以一律以量測為準：
+    //   - 新單插在前面／中間 → 下面同 id 的卡片 top 會動
+    //   - 新單插在最後、或最後一張變高變矮 → 清單總高度會變
+    //   - 灰卡到期補位 → 由上面 setTimeout 裡的 markShifted() 負責，不走這裡
+    if (hasMoved(before, snapshot())) guard.markShifted();
   }
 
   // 有人從外面直接動了這個清單的 DOM（例如服務生頁把某一列換成編輯表單）時，
