@@ -260,8 +260,15 @@ function createClickGuard(root = document) {
  * 三種情況分開處理，因為「重繪」和「卡片位移」不是同一件事：
  *   1. html 一模一樣       → 什麼都不做。尖峰時每幾秒一次推播，多數都是這種，
  *                            不碰 DOM 就不會打斷正在按的人（計時紅字是另外更新的）
- *   2. 內容變了但順序沒變   → 重繪，但不冷卻。手指底下還是同一張單的按鈕
- *   3. 卡片增減或順序改變   → 重繪並冷卻。只有這時候才可能按錯張
+ *   2. 內容變了而且沒人移動 → 重繪，但不冷卻。手指底下還是同一張單的按鈕
+ *   3. 卡片增減、順序改變，
+ *      或任何一張卡片真的
+ *      換了位置           → 重繪並冷卻。只有這時候才可能按錯張
+ *
+ * 情況 2 和 3 不能只看 id 順序：卡片「變矮」一樣會讓下面整排往上跳。
+ * 例如付款清單裡一張單收完錢又送達之後，會從一般卡片（69–125px）縮成
+ * 已結清的一行（35px），id 順序完全沒變，但它底下每一張都位移了 30–80px。
+ * 所以改成重繪前後各量一次位置，有人真的動了就冷卻。
  */
 function createListRenderer(listEl, guard, idAttr = "data-id") {
   const leaving = new Map(); // id -> {html, index, expires}
@@ -272,10 +279,39 @@ function createListRenderer(listEl, guard, idAttr = "data-id") {
   // 算位置時不能把它們算進去，插回去也不能壓到它們。
   const cards = () => [...listEl.querySelectorAll(`[${idAttr}]`)];
 
+  // 量一次：每張卡片的上緣，外加整個清單的高度。
+  // 一次把該讀的讀完再去動 DOM，整個重繪只會觸發兩次 layout，
+  // 不要邊讀邊寫（layout thrashing）。
+  //
+  // 灰卡不列入：它存在的目的就是佔住位置，佔著的時候等於沒有人移動。
+  // 清單高度也要記——這一區變矮，頁面上排在它後面的東西（例如右欄的
+  // 待送達縮短時，下面的付款清單）會整塊往上跳，光看卡片看不出來。
+  function snapshot() {
+    const tops = new Map();
+    for (const el of cards()) {
+      if (el.classList.contains("card-leaving")) continue;
+      tops.set(el.getAttribute(idAttr), el.getBoundingClientRect().top);
+    }
+    return { tops, height: listEl.getBoundingClientRect().height };
+  }
+
+  // 同一張卡片（同 id）的上緣移動超過 1px 就算位移；1px 以內當捨入誤差。
+  // 只有一邊才有的 id 不在這裡判斷：卡片離開時有灰卡頂著就沒人位移，
+  // 真的造成位移的話，下面那些同 id 的卡片自己會被量出來。
+  function hasMoved(before, after) {
+    if (Math.abs(after.height - before.height) > 1) return true;
+    for (const [id, top] of after.tops) {
+      const was = before.tops.get(id);
+      if (was !== undefined && Math.abs(top - was) > 1) return true;
+    }
+    return false;
+  }
+
   return function render(html, ids) {
     if (html === lastHtml && !leaving.size) return; // 情況 1
     const order = [...ids].join(",");
-    const shifted = order !== lastOrder;
+    const orderChanged = order !== lastOrder;
+    const before = snapshot(); // 動 DOM 之前先量
     lastHtml = html;
     lastOrder = order;
 
@@ -334,7 +370,9 @@ function createListRenderer(listEl, guard, idAttr = "data-id") {
       }, item.expires - now);
     }
 
-    if (shifted) guard.markShifted(); // 情況 3 才冷卻
+    // 情況 3 才冷卻：id 順序變了（卡片增減／排序改變，原本就會擋），
+    // 或是量出來真的有卡片換了位置（高度變化造成的位移）。
+    if (orderChanged || hasMoved(before, snapshot())) guard.markShifted();
   };
 }
 
