@@ -22,11 +22,6 @@ const REVERT_LABEL = {
   completed: "↩ 退回製作中",
 };
 
-const ANDON_REASON = {
-  new: (m) => `下單後超過 ${m} 分鐘仍未開始製作`,
-  preparing: (m) => `製作中已超過 ${m} 分鐘`,
-};
-
 document.addEventListener("DOMContentLoaded", () => {
   const queues = {
     new: document.getElementById("queue-new"),
@@ -38,7 +33,13 @@ document.addEventListener("DOMContentLoaded", () => {
   let recipeOpen = false; // 酒譜預設收合
 
   setupAudioUnlock();
-  const showModal = setupAndonModal();
+  const showAndon = setupAndonToasts();
+  // 防誤動：重繪會讓卡片往上跳，手指按下去和放開時可能不是同一張單
+  const guard = createClickGuard();
+  const renderQueue = {
+    new: createListRenderer(queues.new, guard),
+    preparing: createListRenderer(queues.preparing, guard),
+  };
 
   // 已經跳過提醒的訂單，key = 訂單id:狀態（換一站會再提醒一次）
   const alerted = new Set();
@@ -93,7 +94,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function updateAndon() {
     const fresh = [];
     document.querySelectorAll(
-      "#queue-new li[data-id], #queue-preparing li[data-id]"
+      // 灰卡只是殘影，不計時也不觸發警報
+      "#queue-new li[data-id]:not(.card-leaving), " +
+        "#queue-preparing li[data-id]:not(.card-leaving)"
     ).forEach((li) => {
       const status = li.dataset.status;
       const state = andonState(status, li.dataset.ref);
@@ -109,20 +112,23 @@ document.addEventListener("DOMContentLoaded", () => {
         fresh.push({
           table: li.dataset.table,
           summary: li.dataset.summary,
-          reason: ANDON_REASON[status](limit),
+          stage: ANDON_STAGE_LABELS[status],
+          minutes,
         });
       }
     });
 
     if (fresh.length) {
-      showModal(fresh);
+      showAndon(fresh);
       playAlarm();
     }
   }
 
   // 總等待時間（下單到現在）。純顯示，不碰上面的超時判斷與警示音。
   function updateTotalWait() {
-    document.querySelectorAll(".order-queue li[data-id]").forEach(renderTotalWait);
+    document
+      .querySelectorAll(".order-queue li[data-id]:not(.card-leaving)")
+      .forEach(renderTotalWait);
   }
 
   async function refresh() {
@@ -134,9 +140,12 @@ document.addEventListener("DOMContentLoaded", () => {
       const items = orders.filter(
         (o) => o.status === status && o.payment_status === "paid"
       );
-      queues[status].innerHTML = items.length
-        ? items.map(card).join("") // API 已依 placed_at 排序，先進先出
-        : '<li class="placeholder">－</li>';
+      renderQueue[status](
+        items.length
+          ? items.map(card).join("") // API 已依 placed_at 排序，先進先出
+          : '<li class="placeholder">－</li>',
+        new Set(items.map((o) => String(o.id)))
+      );
     }
     updateAndon();
     updateTotalWait();
@@ -200,23 +209,38 @@ document.addEventListener("DOMContentLoaded", () => {
     const btn = e.target.closest("button");
     if (!btn) return;
     const { groupNext, nextStatus, groupRevert } = btn.dataset;
+    if (groupNext === undefined && groupRevert === undefined) return;
+
+    // 卡片剛位移過、或按下去之後位置變了，這一次點擊就不算數
+    if (!guard.allow(btn)) return;
+
+    // 先把卡片上的桌號與飲料記下來：等一下重繪後這張卡片可能已經不在了，
+    // 成功提示要靠它告訴吧台「剛剛動到的是哪一張」
+    const li = btn.closest("li[data-id]");
+    const label = li
+      ? `${tableLabel(li.dataset.table)} ${li.dataset.summary}`
+      : "";
 
     try {
-      if (groupRevert !== undefined) {
-        // 誤觸要能快速修正，所以不做二次確認
-        await apiSend("PATCH", `/orders/${groupRevert}/revert`);
-      } else if (groupNext !== undefined) {
-        await apiSend("PATCH", `/orders/${groupNext}/status`, { status: nextStatus });
-        // 吧台自送：完成之後再推一步到已送達。分兩次呼叫是刻意的，
-        // 狀態流程一步一步走，completed_at 與 delivered_at 都會留下。
-        // 第二步萬一失敗，訂單就停在待送達，服務生頁看得到，不會遺失。
-        if (btn.dataset.alsoDeliver !== undefined) {
-          await apiSend("PATCH", `/orders/${groupNext}/status`, { status: "delivered" });
+      await guard.lock(async () => {
+        if (groupRevert !== undefined) {
+          // 誤觸要能快速修正，所以不做二次確認
+          const after = await apiSend("PATCH", `/orders/${groupRevert}/revert`);
+          showActionToast(`${label} → ${STATUS_LABELS[after.status]}`);
+        } else {
+          await apiSend("PATCH", `/orders/${groupNext}/status`, { status: nextStatus });
+          // 吧台自送：完成之後再推一步到已送達。分兩次呼叫是刻意的，
+          // 狀態流程一步一步走，completed_at 與 delivered_at 都會留下。
+          // 第二步萬一失敗，訂單就停在待送達，服務生頁看得到，不會遺失。
+          let final = nextStatus;
+          if (btn.dataset.alsoDeliver !== undefined) {
+            await apiSend("PATCH", `/orders/${groupNext}/status`, { status: "delivered" });
+            final = "delivered";
+          }
+          showActionToast(`${label} → ${STATUS_LABELS[final]}`);
         }
-      } else {
-        return;
-      }
-      await refresh();
+        await refresh();
+      });
     } catch (err) {
       alert(`狀態更新失敗：${err.message}`);
       await refresh(); // 可能被別台裝置先更新了，重抓一次

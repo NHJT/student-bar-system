@@ -204,22 +204,73 @@ form input, form select,
 .edit-actions { display: flex; gap: .5rem; margin-top: .9rem; }
 .edit-actions .btn { flex: 0 0 auto; }
 
-/* ---------- Andon 超時跳出視窗 ---------- */
-.modal-backdrop {
-  position: fixed; inset: 0; z-index: 50;
-  background: rgba(20, 24, 32, .55);
-  display: flex; align-items: center; justify-content: center; padding: 1rem;
+/* ---------- Andon 超時提示（右下角小卡片） ----------
+   以前是全螢幕 modal，整頁變黑還要手動點掉，調酒中很礙事。
+
+   這一區完全不吃點擊：容器和卡片都是 pointer-events:none，
+   只有那顆 X 是 auto。所以就算提示蓋在「完成」按鈕上面，
+   手指點下去仍然是按到底下的按鈕，不會被提示吃掉。 */
+.toast-stack {
+  position: fixed; z-index: 50;
+  right: 1rem; bottom: 1rem;
+  display: flex; flex-direction: column; gap: .4rem;
+  width: 240px; max-width: calc(100vw - 2rem);
+  pointer-events: none;
 }
-.modal-backdrop[hidden] { display: none; }
-.modal {
-  background: var(--panel); border-radius: 12px; padding: 1.25rem;
-  max-width: 520px; width: 100%;
-  border-top: 5px solid var(--danger);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, .25);
+.toast {
+  pointer-events: none;           /* 整張不吃點擊，只有 X 例外 */
+  position: relative;
+  padding: .45rem 1.5rem .45rem .6rem;
+  background: rgba(255, 255, 255, .88);
+  backdrop-filter: blur(2px);     /* 半透明也看得清字 */
+  border-radius: 8px;
+  border-left: 4px solid var(--danger);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .18);
 }
-.modal h2 { color: var(--danger); margin-bottom: .75rem; }
-.modal .btn { margin-top: 1rem; width: 100%; }
-.modal-reason { font-size: .85rem; color: var(--muted); margin-top: .2rem; }
+.toast-title { font-weight: 700; color: var(--danger); font-size: .82rem; }
+.toast-drink { font-size: .78rem; margin-top: .05rem; }
+.toast-meta { font-size: .7rem; color: var(--muted); margin-top: .1rem; }
+.toast-close {
+  pointer-events: auto;           /* 卡片裡唯一收得到點擊的東西 */
+  position: absolute; top: .15rem; right: .15rem;
+  width: 1.2rem; height: 1.2rem;  /* 刻意小：擋到的面積越小越好 */
+  border: none; background: none; cursor: pointer;
+  color: var(--muted); font-size: .7rem; line-height: 1; padding: 0;
+}
+.toast-close:hover { color: var(--text); }
+/* 操作成功的回報：綠色、比警報低調，4 秒就消失 */
+.toast-action {
+  border-left-color: var(--success, #2e7d32);
+  font-size: .8rem; padding: .45rem .6rem;
+}
+/* 點擊被防誤動擋下來時閃一下，讓人知道「有按到，只是這次不算」 */
+.btn-blocked { animation: btn-blocked-flash .45s ease; }
+@keyframes btn-blocked-flash {
+  0%, 100% { box-shadow: none; }
+  30%      { box-shadow: 0 0 0 3px rgba(217, 65, 65, .5); }
+  65%      { box-shadow: 0 0 0 3px rgba(217, 65, 65, .2); }
+}
+/* 剛離開這一區的卡片：留 2 秒、標灰、完全不吃點擊，
+   後面的卡片才不會瞬間往上補位，手指按到別張單 */
+.card-leaving {
+  opacity: .4; filter: grayscale(1);
+  pointer-events: none;
+  transition: opacity .3s ease;
+}
+/* 超過同時顯示上限時排隊，只用一行告知還有幾則 */
+.toast-more {
+  padding: .3rem .6rem; text-align: center;
+  font-size: .72rem; color: var(--muted);
+  border-left-color: var(--border);
+}
+@media (max-width: 900px) {
+  /* 手機再往上抬一點，避開底部的操作按鈕與 iOS 的 home indicator */
+  .toast-stack {
+    right: .75rem;
+    bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+    width: 220px; max-width: calc(100vw - 1.5rem);
+  }
+}
 
 .sound-hint { font-size: .8rem; color: var(--warning); margin-right: .75rem; }
 .queue-col h2 small { color: var(--muted); font-weight: 400; font-size: .75rem; }
@@ -283,28 +334,36 @@ form input, form select,
 .stage-times b { font-weight: 600; color: var(--text); margin-right: .2rem; }
 
 /* 服務生頁版面：
-   電腦 ─ 左邊整欄是點餐，右欄上為待送達、下為本場訂單／付款
-   手機 ─ 單欄，待送達排最前面（DOM 順序就是手機順序）
-   點餐欄跨兩列，所以右欄兩塊各自依內容高度排列。 */
+   電腦 ─ 左欄點餐＋已完成／已送達，右欄待送達＋本場訂單／付款
+   手機 ─ 單欄，順序為 待送達 → 點餐 → 本場訂單 → 已完成
+
+   兩欄各自是一個 flex 容器，而不是把四塊都丟進同一個 grid：
+   同一個 grid 時右欄的訂單清單一變長，就會把已完成那一塊推到最底下，
+   離點餐區很遠。分成兩欄之後，左右兩邊的高度互不影響。 */
 .waiter-layout {
   display: grid; gap: 1rem; padding: 1rem;
   grid-template-columns: 1fr 1fr;
-  grid-template-areas:
-    "order deliver"
-    "order paylist"
-    "done  .";
   align-items: start;
 }
-.waiter-layout .deliver-panel { grid-area: deliver; }
-.waiter-layout .panel-order   { grid-area: order; }
-.waiter-layout .panel-paylist { grid-area: paylist; }
-/* 已完成／已送達擺在左下角，點餐區正下方：預設收合，不跟右欄搶位置 */
-.waiter-layout .done-panel    { grid-area: done; }
+.waiter-layout .col-left,
+.waiter-layout .col-right {
+  display: flex; flex-direction: column; gap: 1rem;
+  min-width: 0; /* 沒有這行，內容過寬時 flex 項目不會縮，整頁會跑出水平捲軸 */
+}
+.waiter-layout .col-left  { grid-column: 1; grid-row: 1; }
+.waiter-layout .col-right { grid-column: 2; grid-row: 1; }
 @media (max-width: 900px) {
-  .waiter-layout {
-    grid-template-columns: 1fr;
-    grid-template-areas: "deliver" "order" "paylist" "done";
+  .waiter-layout { grid-template-columns: 1fr; }
+  /* 單欄時把兩個欄位容器拆掉，四個區塊直接變成 grid 項目，才能用 order 排 */
+  .waiter-layout .col-left,
+  .waiter-layout .col-right {
+    display: contents;
+    grid-column: auto; grid-row: auto;
   }
+  .waiter-layout .deliver-panel { order: 1; }
+  .waiter-layout .panel-order   { order: 2; }
+  .waiter-layout .panel-paylist { order: 3; }
+  .waiter-layout .done-panel    { order: 4; }
 }
 
 /* 服務生頁的待送達區：置頂，手機一開頁就看得到不用捲動 */

@@ -170,28 +170,289 @@ function setupAudioUnlock(hintId = "sound-hint") {
   document.addEventListener("keydown", unlock, { once: true });
 }
 
-// Andon 跳出視窗。回傳 showModal(items)，items 為 {table, summary, reason}
-function setupAndonModal(modalId = "andon-modal") {
-  const modal = document.getElementById(modalId);
-  if (!modal) return () => {};
-  const body = modal.querySelector(".alert-list");
-  modal.querySelector("[data-modal-close]")?.addEventListener("click", () => {
-    modal.hidden = true;
-  });
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) modal.hidden = true; // 點背景關閉
-  });
+// ---------------------------------------------------------------------------
+// 防誤動：避免「手指按下去的那張單」和「放開時真正按到的那張單」不是同一張。
+//
+// 訂單清單是整批 innerHTML 重繪的，WebSocket 一有推播就重排。吧台按下去的
+// 瞬間，上面那張單可能剛被別人處理掉，卡片整排往上跳一格，手指放開時就按到
+// 下一張——結果動到完全不相干的訂單。現場很難察覺，事後也查不出來。
+//
+// 四道防線：
+//   1. 點擊鎖：上一個動作還沒回來之前，不接受新的點擊
+//   2. 重繪後 500ms 內的點擊一律忽略（畫面剛跳動，手指還沒反應過來）
+//   3. pointerdown 記下當時的重繪版本，放開時版本不同就不算數
+//   4. 剛離開這一區的卡片留 2 秒並標灰，後面的卡片不會瞬間往上補位
+// ---------------------------------------------------------------------------
+const GUARD_SETTLE_MS = 300; // 卡片位移後多久內忽略點擊
+const CARD_LEAVING_MS = 2000; // 離開的卡片先留多久
+
+function createClickGuard(root = document) {
+  let version = 0; // 只有「卡片真的位移」時才加一
+  let shiftedAt = 0;
+  let busy = false;
+  let pressVersion = null;
+
+  // 用捕獲階段：不管點到哪個元素都先記下按下去當時的版本
+  root.addEventListener(
+    "pointerdown",
+    () => {
+      pressVersion = version;
+    },
+    true
+  );
+
+  // 被擋下來時要讓人看得出來。無聲吃掉的話，按的人會以為按鈕壞了，
+  // 再按一次反而更亂。
+  function flash(btn) {
+    if (!btn) return;
+    btn.classList.remove("btn-blocked");
+    void btn.offsetWidth; // 強制重算，同一顆按鈕連續被擋才會重播動畫
+    btn.classList.add("btn-blocked");
+    setTimeout(() => btn.classList.remove("btn-blocked"), 500);
+  }
+
+  return {
+    /** 卡片位置有變動時才呼叫：只有這種時候手指才可能按錯張。 */
+    markShifted() {
+      version += 1;
+      shiftedAt = Date.now();
+    },
+    /**
+     * 這一次點擊可不可以執行。擋下來時會閃一下按鈕並說明原因，
+     * 不會無聲吃掉。btn 傳進來只是為了給回饋。
+     */
+    allow(btn) {
+      const pressed = pressVersion;
+      pressVersion = null;
+      if (busy) {
+        flash(btn); // 上一個動作還沒回來，不另外跳字，避免連點時洗版
+        return false;
+      }
+      if (Date.now() - shiftedAt < GUARD_SETTLE_MS) {
+        flash(btn);
+        showActionToast("清單剛更新，請再按一次");
+        return false;
+      }
+      // 鍵盤觸發的 click 沒有 pointerdown，pressed 會是 null，那就不擋
+      if (pressed !== null && pressed !== version) {
+        flash(btn);
+        showActionToast("清單剛更新，請再按一次");
+        return false;
+      }
+      return true;
+    },
+    /** 包住會打 API 的動作，期間擋掉其他點擊。 */
+    async lock(fn) {
+      busy = true;
+      try {
+        return await fn();
+      } finally {
+        busy = false;
+      }
+    },
+  };
+}
+
+/**
+ * 整批重繪一個清單，並讓「這次消失的卡片」先留 2 秒、標灰、不吃點擊。
+ * 回傳 render(html, ids)，ids 是這次還在的卡片 id 字串集合。
+ *
+ * 三種情況分開處理，因為「重繪」和「卡片位移」不是同一件事：
+ *   1. html 一模一樣       → 什麼都不做。尖峰時每幾秒一次推播，多數都是這種，
+ *                            不碰 DOM 就不會打斷正在按的人（計時紅字是另外更新的）
+ *   2. 內容變了但順序沒變   → 重繪，但不冷卻。手指底下還是同一張單的按鈕
+ *   3. 卡片增減或順序改變   → 重繪並冷卻。只有這時候才可能按錯張
+ */
+function createListRenderer(listEl, guard, idAttr = "data-id") {
+  const leaving = new Map(); // id -> {html, index, expires}
+  let lastHtml = null;
+  let lastOrder = ""; // 上一次的 id 順序
+
+  // 這個清單裡的「卡片」。placeholder 與「顯示全部」那一列沒有 idAttr，
+  // 算位置時不能把它們算進去，插回去也不能壓到它們。
+  const cards = () => [...listEl.querySelectorAll(`[${idAttr}]`)];
+
+  return function render(html, ids) {
+    if (html === lastHtml && !leaving.size) return; // 情況 1
+    const order = [...ids].join(",");
+    const shifted = order !== lastOrder;
+    lastHtml = html;
+    lastOrder = order;
+
+    // 先記下這一輪不見的卡片：長相，還有它原本排在第幾張。
+    // 要連 index 一起記，灰卡才能留在原位；只 append 到最後面的話，
+    // 它後面的卡片照樣立刻往上補位，等於沒擋到。
+    cards().forEach((el, index) => {
+      if (el.classList.contains("card-leaving")) return;
+      const id = el.getAttribute(idAttr);
+      if (!ids.has(id)) {
+        leaving.set(id, {
+          html: el.outerHTML,
+          index,
+          expires: Date.now() + CARD_LEAVING_MS,
+        });
+      }
+    });
+
+    listEl.innerHTML = html;
+
+    // 由小到大插回去：先插前面的，後面的 index 才不會被自己擠掉
+    const now = Date.now();
+    const back = [...leaving.entries()]
+      .filter(([id, item]) => {
+        if (item.expires <= now || ids.has(id)) {
+          leaving.delete(id); // 過期了，或是它又回來了（例如被退回上一步）
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => a[1].index - b[1].index);
+
+    for (const [id, item] of back) {
+      const here = cards();
+      const ghost = document.createElement("template");
+      ghost.innerHTML = item.html.trim();
+      const node = ghost.content.firstElementChild;
+      if (!node) {
+        leaving.delete(id);
+        continue;
+      }
+      node.classList.add("card-leaving");
+      // 插在原本那個位置的卡片前面；超過長度就接在最後一張卡片後面。
+      // 用卡片當定位點，placeholder 與「顯示全部」那一列不會被插到中間。
+      if (item.index < here.length) here[item.index].before(node);
+      else if (here.length) here[here.length - 1].after(node);
+      else listEl.prepend(node);
+
+      setTimeout(() => {
+        if (Date.now() >= item.expires) leaving.delete(id);
+        if (!node.isConnected) return; // 已經被後來的重繪換掉了，位置沒有變動
+        node.remove();
+        // 灰卡消失的這一刻，後面的卡片才真的往上補位——和重繪造成的位移
+        // 一樣危險，所以同樣要冷卻並更新版本號
+        guard.markShifted();
+      }, item.expires - now);
+    }
+
+    if (shifted) guard.markShifted(); // 情況 3 才冷卻
+  };
+}
+
+// Andon 超時提示：右下角的小卡片，不是全螢幕視窗。
+// 以前用 modal，整頁會變黑、調酒師手上在調酒還得先去點掉它才能操作。
+// 現在只佔右下角一小塊，而且整張卡片都不吃點擊（CSS 的 pointer-events:none），
+// 只有那顆 X 例外。提示就算正好蓋在「完成」按鈕上，手指點下去還是按到按鈕。
+// 提示裡的階段名稱。和 STATUS_LABELS 分開：那是訂單徽章上的字（「新訂單」），
+// 這裡講的是「誰該動了」，用和門檻設定一致的講法（待接單 20 分、待送達 10 分）。
+const ANDON_STAGE_LABELS = {
+  new: "待接單",
+  preparing: "製作中",
+  completed: "待送達",
+};
+
+const ANDON_TOAST_MAX = 4; // 同時最多顯示幾張，其餘排隊
+const ANDON_TOAST_TTL = 15000; // 每張顯示多久（毫秒）後自動消失
+
+// 回傳 showAndon(items)，items 為 {table, summary, stage, minutes}
+function toastStack(containerId = "andon-toasts") {
+  let box = document.getElementById(containerId);
+  if (!box) {
+    box = document.createElement("div");
+    box.id = containerId;
+    box.className = "toast-stack";
+    // polite 而不是 assertive：讀螢幕的人不會被打斷，但還是會唸到
+    box.setAttribute("role", "status");
+    box.setAttribute("aria-live", "polite");
+    document.body.appendChild(box);
+  }
+  return box;
+}
+
+// 操作成功的回報：「桌 5 Negroni → 製作中」。
+// 畫面上同一張單可能已經跳到別區了，這行字是唯一能確認「我剛剛動到的是哪一張」
+// 的依據，所以一定要帶桌號與飲料名，不能只說「已更新」。
+const ACTION_TOAST_TTL = 4000;
+
+// 任何一張提示消失後都要回頭看看有沒有警報在排隊。操作提示和警報共用同一疊，
+// 操作提示到期卻不通知的話，排隊中的警報會一直卡著不出來。
+const toastDrains = new Set();
+
+function drainToasts() {
+  for (const drain of toastDrains) drain();
+}
+
+function showActionToast(text) {
+  const box = toastStack();
+  const card = document.createElement("div");
+  card.className = "toast toast-action";
+  card.textContent = text;
+  box.appendChild(card);
+  setTimeout(() => {
+    card.remove();
+    drainToasts();
+  }, ACTION_TOAST_TTL);
+}
+
+function setupAndonToasts(containerId = "andon-toasts") {
+  const box = toastStack(containerId);
+
+  const pending = []; // 超過上限時排隊，前面的消失後再補上
+  let moreEl = null;
+
+  // 同時最多幾張只算「警報」。操作提示（.toast-action）和「還有 N 則」
+  // 都不佔名額——連按幾下產生幾張操作提示，不該把超時警報擠掉。
+  const andonCount = () => box.querySelectorAll(".toast-andon").length;
+
+  function drain() {
+    while (pending.length && andonCount() < ANDON_TOAST_MAX) show(pending.shift());
+    renderMore();
+  }
+  toastDrains.add(drain);
+
+  function renderMore() {
+    if (!pending.length) {
+      moreEl?.remove();
+      moreEl = null;
+      return;
+    }
+    if (!moreEl) {
+      moreEl = document.createElement("div");
+      moreEl.className = "toast toast-more";
+      box.appendChild(moreEl);
+    }
+    moreEl.textContent = `還有 ${pending.length} 則`;
+    box.appendChild(moreEl); // 一直保持在最下面
+  }
+
+  function dismiss(card) {
+    if (!card.isConnected) return; // X 按過了就不要再被計時器關一次
+    card.remove();
+    drain();
+  }
+
+  function show(item) {
+    const card = document.createElement("div");
+    card.className = "toast toast-andon";
+    card.innerHTML = `
+      <button class="toast-close" aria-label="關閉提示">✕</button>
+      <div class="toast-title">⚠️ ${escapeHtml(tableLabel(item.table))}</div>
+      <div class="toast-drink">${escapeHtml(item.summary)}</div>
+      <div class="toast-meta">${escapeHtml(item.stage)}・已等 ${Math.floor(item.minutes)} 分</div>`;
+    card.querySelector(".toast-close").addEventListener("click", () => dismiss(card));
+    box.appendChild(card);
+    renderMore(); // 把「還有 N 則」推回最下面
+    setTimeout(() => dismiss(card), ANDON_TOAST_TTL);
+  }
+
   return (items) => {
-    body.innerHTML = items
-      .map(
-        (it) => `
-        <li class="overdue-item">
-          <strong>${escapeHtml(tableLabel(it.table))} ・ ${escapeHtml(it.summary)}</strong>
-          <div class="modal-reason">${escapeHtml(it.reason)}</div>
-        </li>`
-      )
-      .join("");
-    modal.hidden = false;
+    for (const item of items) {
+      if (andonCount() >= ANDON_TOAST_MAX) {
+        pending.push(item);
+        renderMore();
+      } else {
+        show(item);
+      }
+    }
   };
 }
 
