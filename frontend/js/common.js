@@ -307,7 +307,7 @@ function createListRenderer(listEl, guard, idAttr = "data-id") {
     return false;
   }
 
-  return function render(html, ids) {
+  function render(html, ids) {
     if (html === lastHtml && !leaving.size) return; // 情況 1
     const order = [...ids].join(",");
     const orderChanged = order !== lastOrder;
@@ -373,7 +373,16 @@ function createListRenderer(listEl, guard, idAttr = "data-id") {
     // 情況 3 才冷卻：id 順序變了（卡片增減／排序改變，原本就會擋），
     // 或是量出來真的有卡片換了位置（高度變化造成的位移）。
     if (orderChanged || hasMoved(before, snapshot())) guard.markShifted();
+  }
+
+  // 有人從外面直接動了這個清單的 DOM（例如服務生頁把某一列換成編輯表單）時，
+  // 要呼叫這個。不然 lastHtml 還停在被改之前的樣子，下一次重繪如果算出
+  // 一模一樣的 html，就會走「情況 1：什麼都不做」的捷徑——外面改的東西
+  // 留在畫面上清不掉。
+  render.invalidate = () => {
+    lastHtml = null;
   };
+  return render;
 }
 
 // Andon 超時提示：右下角的小卡片，不是全螢幕視窗。
@@ -537,21 +546,78 @@ function statusBadge(status) {
   return `<span class="badge badge-${status}">${STATUS_LABELS[status] ?? status}</span>`;
 }
 
+// ---------------------------------------------------------------------------
+// 右上角的連線狀態列。
+//
+// 「連線還在」和「資料是新的」是兩回事：後端短暫出錯時 WebSocket 照常連著，
+// 但重抓訂單會失敗，畫面就停在舊資料——而狀態列還寫著「已連線」，現場完全
+// 看不出有問題。所以狀態由兩個條件一起決定，斷線優先。
+// ---------------------------------------------------------------------------
+const WS_STATUS = {
+  connected: ["● 已連線", "ws-status connected"],
+  disconnected: ["● 已斷線，5 秒後重連", "ws-status disconnected"],
+  stale: ["● 資料更新失敗，重試中", "ws-status stale"],
+};
+
+let wsConnected = false;
+let wsDataFresh = true;
+
+function renderWsStatus() {
+  const el = document.getElementById("ws-status");
+  if (!el) return;
+  const key = !wsConnected ? "disconnected" : wsDataFresh ? "connected" : "stale";
+  [el.textContent, el.className] = WS_STATUS[key];
+}
+
+/**
+ * 把一次「重抓資料並重繪」包起來。
+ *
+ * 不包的話，await 掉的 promise 一旦 reject 就只會變成主控台裡的
+ * unhandled rejection，畫面照舊顯示「已連線」卻停在舊資料。
+ * 失敗時把狀態列轉成警示，下一次成功（推播或重連都會再試）自動恢復。
+ */
+async function guardedRefresh(fn) {
+  try {
+    await fn();
+    if (!wsDataFresh) {
+      wsDataFresh = true;
+      renderWsStatus();
+    }
+  } catch (err) {
+    wsDataFresh = false;
+    renderWsStatus();
+    console.error("資料更新失敗", err);
+  }
+}
+
 // 建立 WebSocket 連線
 // - onMessage: 收到伺服器廣播的事件物件（{event: "order_created", order: {...}} 等）
 // - onOpen: 連上（含斷線重連成功）時呼叫，用來補抓斷線期間錯過的資料
 function connectWebSocket(onMessage, onOpen) {
-  const statusEl = document.getElementById("ws-status");
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${proto}://${location.host}/ws`);
 
-  ws.onopen = () => {
-    if (statusEl) { statusEl.textContent = "● 已連線"; statusEl.className = "ws-status connected"; }
-    if (onOpen) onOpen();
+  ws.onopen = async () => {
+    wsConnected = true;
+    renderWsStatus();
+    // onOpen 可能是 async：一定要 await 並接住，否則重連後的補抓失敗
+    // 同樣會變成沒人看見的 unhandled rejection
+    try {
+      if (onOpen) await onOpen();
+    } catch (err) {
+      console.error("重連後補抓資料失敗", err);
+    }
   };
-  ws.onmessage = (e) => onMessage(JSON.parse(e.data));
+  ws.onmessage = async (e) => {
+    try {
+      await onMessage(JSON.parse(e.data));
+    } catch (err) {
+      console.error("處理推播失敗", err);
+    }
+  };
   ws.onclose = () => {
-    if (statusEl) { statusEl.textContent = "● 已斷線，5 秒後重連"; statusEl.className = "ws-status disconnected"; }
+    wsConnected = false;
+    renderWsStatus();
     setTimeout(() => connectWebSocket(onMessage, onOpen), 5000);
   };
   return ws;

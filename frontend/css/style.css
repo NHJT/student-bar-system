@@ -44,6 +44,8 @@ body {
 .ws-status { font-size: .85rem; color: var(--muted); }
 .ws-status.connected { color: var(--ok); }
 .ws-status.disconnected { color: var(--danger); }
+/* 連線還在、但資料抓不到：和斷線分開，提醒的是「畫面上的不是最新的」 */
+.ws-status.stale { color: var(--warning); font-weight: 600; }
 
 .layout-one-col, .layout-two-col, .layout-three-col {
   display: grid; gap: 1rem; padding: 1rem;
