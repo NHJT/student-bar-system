@@ -39,7 +39,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const deliverList = document.getElementById("queue-completed");
   const deliverCount = document.getElementById("deliver-count");
   const unpaidCount = document.getElementById("unpaid-count");
-  const newOrderHint = document.getElementById("new-order-hint");
   const doneList = document.getElementById("queue-done");
   const doneToggle = document.getElementById("done-toggle");
   const doneCaret = document.getElementById("done-caret");
@@ -49,9 +48,6 @@ document.addEventListener("DOMContentLoaded", () => {
   let cart = []; // 待送出的杯：{drink_id, drink_name, quantity, special_request}，一列一張單
   let editingId = null; // 正在編輯中的訂單 id
   let payListExpanded = false; // 付款清單是否已展開全部
-  // 新單排在清單底部，不捲下去不會注意到，用這兩個變數決定要不要提示
-  let lastNewestId = null;
-  let hasNewOrder = false;
   let pendingRefresh = false; // 編輯期間收到的更新，等編輯結束再套用
   const expandedSettled = new Set(); // 已結清訂單被點開的，重繪後要保持
   let doneOpen = false; // 整個區塊預設收合
@@ -704,30 +700,18 @@ document.addEventListener("DOMContentLoaded", () => {
       : "全部已收款 ✓";
     unpaidCount.classList.toggle("pay-count-warn", unpaidOrders.length > 0);
 
-    // 分組順序不變：前一晚殘留的未結單 → 未付款 → 已付款。
-    // 組內改成舊的在上、新的在下，和實際出單的順序一致，眼睛由上往下掃。
+    // 前一營業日殘留的未結單排最前面，接著未付款，其餘新的在前
     const stale = active.filter((o) => !o.is_current_business_day);
     const fresh = active.filter((o) => o.is_current_business_day);
-    const byAge = (a, b) => a.id - b.id; // 舊 → 新
     const ordered = [
-      ...stale.sort(byAge),
-      ...fresh.filter((o) => o.payment_status === "unpaid").sort(byAge),
-      ...fresh.filter((o) => o.payment_status !== "unpaid").sort(byAge),
+      ...stale.sort((a, b) => b.id - a.id),
+      ...fresh.filter((o) => o.payment_status === "unpaid").sort((a, b) => b.id - a.id),
+      ...fresh.filter((o) => o.payment_status !== "unpaid").sort((a, b) => b.id - a.id),
     ];
 
-    // 一杯一單之後單量變多，預設只排 PAYLIST_PAGE 張。
-    // 新的在下面，所以要取「最後」N 張而不是前 N 張——
-    // 直接 slice(0, N) 會只看得到最舊的那幾張，剛下的單全部被藏起來。
-    const shown = payListExpanded ? ordered : ordered.slice(-PAYLIST_PAGE);
+    // 一杯一單之後單量變多，只先排前 PAYLIST_PAGE 張，其餘點開才顯示
+    const shown = payListExpanded ? ordered : ordered.slice(0, PAYLIST_PAGE);
     const hidden = ordered.length - shown.length;
-
-    // 新單出現在底部，不捲到最下面不會注意到，所以在標題旁提示一下
-    const newestId = ordered.length ? ordered[ordered.length - 1].id : null;
-    if (lastNewestId !== null && newestId !== null && newestId !== lastNewestId) {
-      hasNewOrder = true;
-    }
-    lastNewestId = newestId;
-    newOrderHint.hidden = !hasNewOrder;
     renderOrderList(
       ordered.length
         ? shown.map(orderRow).join("") +
@@ -764,13 +748,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 訂單列上的所有動作（事件委派，清單重繪也不會掉監聽）
   // 編輯表單換飲品時即時重算金額差額
-  // 點提示就捲到清單最下面的新單，提示本身消失
-  newOrderHint.addEventListener("click", () => {
-    hasNewOrder = false;
-    newOrderHint.hidden = true;
-    orderList.lastElementChild?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  });
-
   orderList.addEventListener("change", (e) => {
     if (e.target.matches('[data-field="drink"]')) updateEditMoney();
   });

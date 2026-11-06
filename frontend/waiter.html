@@ -83,12 +83,7 @@
       <!-- 訂單與付款區：重點是付款狀態，未付款排最上面，
            已付款且已送達的縮成一行，點一下才展開品項 -->
       <section class="panel panel-paylist">
-        <!-- 新單排在清單底部，不捲下去不會注意到，所以標題旁給一個提示；
-             點一下就捲到最新那張並消失 -->
-        <h2>本場訂單／付款
-          <small id="unpaid-count" class="pay-count"></small>
-          <button id="new-order-hint" class="new-order-hint" hidden>↓ 有新訂單</button>
-        </h2>
+        <h2>本場訂單／付款 <small id="unpaid-count" class="pay-count"></small></h2>
         <ul id="order-list" class="order-list compact">
           <li class="placeholder">尚無訂單</li>
         </ul>
