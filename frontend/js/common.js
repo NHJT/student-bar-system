@@ -578,6 +578,15 @@ function renderWsStatus() {
   [el.textContent, el.className] = WS_STATUS[key];
 }
 
+// ⚠⚠ 從這裡到檔案結尾（guardedRefresh、輪詢、重連、visibilitychange、
+//     connectWebSocket）是「畫面不用按 F5 也會自己更新」的全部機制。
+//     這個 bug 復發過不只一次，而且壞掉時畫面上看不出來。
+//
+//     動這一段之前與之後，請跑：
+//         python -m pytest tests/test_live_update.py -v
+//     全部 passed 才算（skipped 不算），並在 commit message 註明已跑。
+//     規則見 CLAUDE.md；第一次跑的準備步驟寫在那份測試檔的開頭。
+
 /**
  * 把一次「重抓資料並重繪」包起來。
  *
@@ -614,6 +623,10 @@ async function guardedRefresh(fn) {
 //
 // 輪詢走的是和推播完全相同的 refresh，所以一樣經過 createListRenderer，
 // 灰卡殘影與防誤觸冷卻都照舊，不會繞過去。
+//
+// ⚠ 改下面任何一個數字或函式前後都要跑 tests/test_live_update.py（見上方）。
+//   測試裡的時限是規格：輪詢 10 秒內、重連 8 秒內、切回前景 2 秒內。
+//   把 POLL_MS 調大、或把重連間隔拉長，測試會紅——那是故意的。
 // ---------------------------------------------------------------------------
 const POLL_MS = 10000; // 前景輪詢間隔
 const HEARTBEAT_MS = 25000; // 心跳間隔
@@ -662,6 +675,8 @@ function wsWireVisibility(onMessage, onOpen, onPoll) {
 // - onMessage: 收到伺服器廣播的事件物件（{event: "order_created", order: {...}} 等）
 // - onOpen: 連上（含斷線重連成功）時呼叫，用來補抓斷線期間錯過的資料
 // - onPoll: 前景每 POLL_MS 跑一次的保底更新；不給就不輪詢
+//           ⚠ 吧台頁與服務生頁一定要給。漏掉這個參數，保底輪詢和切回前景的
+//             補抓會一起失效，而且平常完全看不出來（測試會抓到）
 function connectWebSocket(onMessage, onOpen, onPoll) {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${proto}://${location.host}/ws`);

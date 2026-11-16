@@ -862,6 +862,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // 重連成功時補抓斷線期間的變化。
   // 一律經過 guardedRefresh：後端出錯時狀態列會轉成「資料更新失敗，重試中」，
   // 不會讓畫面停在舊資料卻還寫著「已連線」。
+  //
+  // ⚠ 動這個呼叫（或 refreshOrders）之前與之後，請跑：
+  //     python -m pytest tests/test_live_update.py -v
+  //   三個參數少一個，這一頁就會回到「要按 F5 才看得到新訂單」。規則見 CLAUDE.md。
   connectWebSocket(
     async (msg) => {
       if (msg.event?.startsWith("order_")) await guardedRefresh(refreshOrders);

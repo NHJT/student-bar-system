@@ -110,6 +110,17 @@ set TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5432/studentbar_test
 python -m pytest
 ```
 
+`tests/test_live_update.py` 是「畫面不用按 F5 也會自己更新」的復發防護，會開真的
+瀏覽器去看吧台頁與服務生頁，所以第一次要多裝一個瀏覽器（只需要做一次）：
+
+```bash
+python -m playwright install chromium
+python -m pytest tests/test_live_update.py -v    # 約一分半鐘
+```
+
+動到連線、輪詢、畫面更新的程式之前與之後都要跑這一份，規則寫在 `CLAUDE.md`。
+結果裡出現 `skipped` 代表沒有測到（沒設 `TEST_DATABASE_URL` 或沒裝 Playwright），不算通過。
+
 ## 部署到 Railway
 
 1. 在 Railway 專案裡新增一個 **PostgreSQL** 服務。

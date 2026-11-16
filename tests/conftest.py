@@ -38,6 +38,15 @@ def _checked_url() -> str:
     return _URL
 
 
+@pytest.fixture(scope="session")
+def test_database_url() -> str:
+    """測試資料庫的連線字串，給要自己另外起伺服器的測試用（test_live_update.py）。
+
+    和 fresh_db 走同一道安全鎖：沒設定就跳過，名稱不含 test 就拒絕執行。
+    """
+    return _checked_url()
+
+
 @pytest.fixture
 def fresh_db():
     """重建一套乾淨的資料表，回傳 backend 正在用的 engine。

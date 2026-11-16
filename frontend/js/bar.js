@@ -252,6 +252,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // 不會讓畫面停在舊資料卻還寫著「已連線」。
   // 第三個參數是保底輪詢：推播失效（例如半開連線）時，最多 10 秒也會更新。
   // 走的是同一個 refresh，所以一樣經過 createListRenderer 的防誤觸。
+  //
+  // ⚠ 動這個呼叫（或上面的 refresh）之前與之後，請跑：
+  //     python -m pytest tests/test_live_update.py -v
+  //   三個參數少一個，吧台就會回到「要按 F5 才看得到新訂單」。規則見 CLAUDE.md。
   connectWebSocket(
     async (msg) => {
       if (msg.event?.startsWith("order_")) await guardedRefresh(refresh);

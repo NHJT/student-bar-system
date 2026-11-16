@@ -27,6 +27,9 @@ class ConnectionManager:
         if ws in self.active:
             self.active.remove(ws)
 
+    # ⚠ 動 broadcast 之前與之後，請跑 python -m pytest tests/test_live_update.py -v
+    #   （全部 passed 才算；規則見 CLAUDE.md）。第一次「要按 F5 才看得到新訂單」
+    #   就是這裡造成的：送不出去的例外被吞掉，連線卻沒關，前端不知道要重連。
     async def broadcast(self, message: dict) -> None:
         """把事件推播給所有連線中的頁面。"""
         # 訂單裡有 datetime.date（business_date），json.dumps 處理不了，

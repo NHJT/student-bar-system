@@ -86,6 +86,9 @@ def health():
     return {"status": "ok"}
 
 
+# ⚠ 動這個端點之前與之後，請跑 python -m pytest tests/test_live_update.py -v
+#   （全部 passed 才算；規則見 CLAUDE.md）。這裡壞掉時，吧台與服務生的畫面
+#   會退化成只靠 10 秒輪詢，再壞一點就是「要按 F5 才看得到新訂單」。
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     """即時更新通道（第四步實作廣播邏輯）。"""
