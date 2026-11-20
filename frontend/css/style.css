@@ -338,7 +338,7 @@ form input, form select,
 .stage-times b { font-weight: 600; color: var(--text); margin-right: .2rem; }
 
 /* 服務生頁版面：
-   電腦 ─ 左欄點餐＋已完成／已送達，右欄待送達＋本場訂單／付款
+   電腦 ─ 左欄點餐＋已完成／已送達，右欄待送達＋本場訂單
    手機 ─ 單欄，順序為 待送達 → 點餐 → 本場訂單 → 已完成
 
    兩欄各自是一個 flex 容器，而不是把四塊都丟進同一個 grid：
@@ -393,7 +393,7 @@ form input, form select,
 
 .order-row { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
 
-/* 本場訂單／付款：版面讓給還要處理的訂單，所以整欄收緊 */
+/* 本場訂單：版面讓給還要處理的訂單，所以整欄收緊 */
 .pay-count { color: var(--muted); font-weight: 400; font-size: .8rem; }
 .pay-count.pay-count-warn { color: var(--danger); font-weight: 600; }
 /* 前一營業日殘留、還沒結清的單 */
