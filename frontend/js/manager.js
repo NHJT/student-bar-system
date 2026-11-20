@@ -288,13 +288,13 @@ document.addEventListener("DOMContentLoaded", () => {
       await apiSend("POST", "/ingredients", {
         name: document.getElementById("new-ingredient-name").value.trim(),
         unit: document.getElementById("new-ingredient-unit").value.trim(),
+        // 庫存與補貨點可以留白顯示灰字提示；留白時 Number("") 是 0，等於填 0
         current_stock: Number(document.getElementById("new-ingredient-stock").value),
         reorder_point: Number(document.getElementById("new-ingredient-reorder").value),
         is_unlimited: document.getElementById("new-ingredient-unlimited").checked,
       });
+      // 兩格沒有預設值，reset() 之後就是空白，灰字提示會重新出現
       e.target.reset();
-      document.getElementById("new-ingredient-stock").value = 0;
-      document.getElementById("new-ingredient-reorder").value = 0;
       await refreshStock();
     } catch (err) {
       alert(`新增原料失敗：${err.message}`);
